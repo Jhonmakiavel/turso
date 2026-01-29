@@ -139,51 +139,58 @@ pub fn emit_columns_to_destination(
             } else {
                 let record_reg = program.alloc_register();
 
-                // For ephemeral indexes (materialized subqueries), columns need to be reordered
-                // to match the index definition (key columns first, then remaining columns).
-                // The index.columns[i].pos_in_table tells us which result column goes in position i.
+                // For ephemeral indexes, we may need to:
+                // 1. Reorder columns if index key order differs from result order (seek indexes)
+                // 2. Append a unique rowid to allow duplicate key values (has_rowid indexes)
                 let (record_start, record_count) =
                     if dedupe_index.ephemeral && dedupe_index.columns.len() == num_columns {
-                        // Reorder columns according to index definition
-                        // If the index has_rowid, we need an extra register for the rowid
-                        let extra_for_rowid = if dedupe_index.has_rowid { 1 } else { 0 };
-                        let reordered_start =
-                            program.alloc_registers(dedupe_index.columns.len() + extra_for_rowid);
-                        for (idx_pos, idx_col) in dedupe_index.columns.iter().enumerate() {
-                            let src_reg = start_reg + idx_col.pos_in_table;
-                            let dst_reg = reordered_start + idx_pos;
-                            program.emit_insn(Insn::Copy {
-                                src_reg,
-                                dst_reg,
-                                extra_amount: 0,
-                            });
-                        }
-                        // For indexes with rowid (e.g., derived tables), generate a unique rowid
-                        // to ensure duplicate column values don't get dropped. For ephemeral indexes,
-                        // use a per-cursor sequence instead of NewRowid because NewRowid derives from
-                        // index order and can repeat when inserts are out of key order. SQLite does
-                        // the same for autoindex rowids (see where.c: translateColumnToCopy).
-                        if dedupe_index.has_rowid {
-                            let rowid_reg = reordered_start + dedupe_index.columns.len();
-                            if dedupe_index.ephemeral {
-                                program.emit_insn(Insn::Sequence {
-                                    cursor_id: *index_cursor_id,
-                                    target_reg: rowid_reg,
-                                });
-                            } else {
-                                program.emit_insn(Insn::NewRowid {
-                                    cursor: *index_cursor_id,
-                                    rowid_reg,
-                                    prev_largest_reg: 0,
+                        // Check if reordering is needed (any pos_in_table != idx_pos)
+                        let needs_reorder = dedupe_index
+                            .columns
+                            .iter()
+                            .enumerate()
+                            .any(|(idx_pos, col)| col.pos_in_table != idx_pos);
+
+                        if needs_reorder {
+                            // Reorder columns to match index key order
+                            let extra_for_rowid = if dedupe_index.has_rowid { 1 } else { 0 };
+                            let reordered_start =
+                                program.alloc_registers(num_columns + extra_for_rowid);
+
+                            for (idx_pos, idx_col) in dedupe_index.columns.iter().enumerate() {
+                                program.emit_insn(Insn::Copy {
+                                    src_reg: start_reg + idx_col.pos_in_table,
+                                    dst_reg: reordered_start + idx_pos,
+                                    extra_amount: 0,
                                 });
                             }
+
+                            if dedupe_index.has_rowid {
+                                program.emit_insn(Insn::Sequence {
+                                    cursor_id: *index_cursor_id,
+                                    target_reg: reordered_start + num_columns,
+                                });
+                            }
+
+                            (reordered_start, num_columns + extra_for_rowid)
+                        } else if dedupe_index.has_rowid {
+                            // No reordering needed, but need to append rowid
+                            let new_start = program.alloc_registers(num_columns + 1);
+                            program.emit_insn(Insn::Copy {
+                                src_reg: start_reg,
+                                dst_reg: new_start,
+                                extra_amount: num_columns - 1,
+                            });
+                            program.emit_insn(Insn::Sequence {
+                                cursor_id: *index_cursor_id,
+                                target_reg: new_start + num_columns,
+                            });
+                            (new_start, num_columns + 1)
+                        } else {
+                            // No reordering or rowid needed - use registers directly
+                            (start_reg, num_columns)
                         }
-                        (
-                            reordered_start,
-                            dedupe_index.columns.len() + extra_for_rowid,
-                        )
                     } else {
-                        // Non-ephemeral indexes: use natural column order
                         (start_reg, num_columns)
                     };
 

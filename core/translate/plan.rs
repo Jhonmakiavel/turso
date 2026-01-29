@@ -721,6 +721,9 @@ pub struct OuterQueryReference {
     /// i.e., if the subquery depends on tables T and U,
     /// then both T and U need to be in scope for the subquery to be evaluated.
     pub col_used_mask: ColumnUsedMask,
+    /// CTE ID if this is a CTE reference. Used to track CTE reference counts
+    /// for materialization decisions.
+    pub cte_id: Option<usize>,
 }
 
 impl OuterQueryReference {

@@ -247,11 +247,19 @@ fn plan_subqueries_with_outer_query_access<'a>(
         referenced_tables
             .joined_tables()
             .iter()
-            .map(|t| OuterQueryReference {
-                table: t.table.clone(),
-                identifier: t.identifier.clone(),
-                internal_id: t.internal_id,
-                col_used_mask: ColumnUsedMask::default(),
+            .map(|t| {
+                // Extract cte_id from FromClauseSubquery if this is a CTE reference
+                let cte_id = match &t.table {
+                    Table::FromClauseSubquery(subq) => subq.cte_id,
+                    _ => None,
+                };
+                OuterQueryReference {
+                    table: t.table.clone(),
+                    identifier: t.identifier.clone(),
+                    internal_id: t.internal_id,
+                    col_used_mask: ColumnUsedMask::default(),
+                    cte_id,
+                }
             })
             .chain(
                 referenced_tables
@@ -262,6 +270,7 @@ fn plan_subqueries_with_outer_query_access<'a>(
                         identifier: t.identifier.clone(),
                         internal_id: t.internal_id,
                         col_used_mask: ColumnUsedMask::default(),
+                        cte_id: t.cte_id, // Preserve CTE ID from outer query refs
                     }),
             )
             .collect::<Vec<_>>()
@@ -650,6 +659,85 @@ fn update_column_used_masks(
     }
 }
 
+/// Recursively pre-materialize all multi-ref CTEs in a plan tree.
+/// This must be called BEFORE emitting any coroutines to ensure CTEs referenced
+/// inside coroutines have their cursors opened at the top level.
+fn pre_materialize_multi_ref_ctes(
+    program: &mut ProgramBuilder,
+    plan: &mut Plan,
+    t_ctx: &mut TranslateCtx,
+) -> Result<()> {
+    match plan {
+        Plan::Select(select_plan) => {
+            pre_materialize_multi_ref_ctes_in_tables(
+                program,
+                &mut select_plan.table_references,
+                t_ctx,
+            )?;
+        }
+        Plan::CompoundSelect {
+            left, right_most, ..
+        } => {
+            for (select_plan, _) in left.iter_mut() {
+                pre_materialize_multi_ref_ctes_in_tables(
+                    program,
+                    &mut select_plan.table_references,
+                    t_ctx,
+                )?;
+            }
+            pre_materialize_multi_ref_ctes_in_tables(
+                program,
+                &mut right_most.table_references,
+                t_ctx,
+            )?;
+        }
+        Plan::Delete(_) | Plan::Update(_) => {}
+    }
+    Ok(())
+}
+
+fn pre_materialize_multi_ref_ctes_in_tables(
+    program: &mut ProgramBuilder,
+    tables: &mut TableReferences,
+    t_ctx: &mut TranslateCtx,
+) -> Result<()> {
+    for table_reference in tables.joined_tables_mut().iter_mut() {
+        if let Table::FromClauseSubquery(from_clause_subquery) = &mut table_reference.table {
+            // First, recursively process nested plans
+            pre_materialize_multi_ref_ctes(program, from_clause_subquery.plan.as_mut(), t_ctx)?;
+
+            // Then check if THIS CTE should be materialized
+            if let Some(cte_id) = from_clause_subquery.cte_id {
+                if program.get_materialized_cte(cte_id).is_some() {
+                    continue;
+                }
+                let is_multi_ref = program.get_cte_reference_count(cte_id) > 1;
+                if from_clause_subquery.materialize_hint || is_multi_ref {
+                    let (result_columns_start, cte_cursor_id, cte_table) = emit_materialized_cte(
+                        program,
+                        from_clause_subquery.plan.as_mut(),
+                        t_ctx,
+                        from_clause_subquery.columns.len(),
+                    )?;
+                    program.register_materialized_cte(
+                        cte_id,
+                        MaterializedCteInfo {
+                            cursor_id: cte_cursor_id,
+                            table: cte_table,
+                            result_columns_start_reg: result_columns_start,
+                            num_columns: from_clause_subquery.columns.len(),
+                        },
+                    );
+                    from_clause_subquery.result_columns_start_reg = Some(result_columns_start);
+                    program
+                        .set_subquery_result_reg(table_reference.internal_id, result_columns_start);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Emit the subqueries contained in the FROM clause.
 /// This is done first so the results can be read in the main query loop.
 pub fn emit_from_clause_subqueries(
@@ -660,6 +748,46 @@ pub fn emit_from_clause_subqueries(
 ) -> Result<()> {
     if tables.joined_tables().is_empty() {
         emit_explain!(program, false, "SCAN CONSTANT ROW".to_owned());
+    }
+
+    // FIRST PASS: Pre-materialize all multi-ref CTEs recursively.
+    // This ensures materialized CTEs are available BEFORE any coroutines that might
+    // reference them internally. Without this, a coroutine might try to materialize
+    // a CTE inside its bytecode, but the cursor wouldn't be opened until the coroutine
+    // runs, causing OpenDup failures in the main code path.
+    for table_reference in tables.joined_tables_mut().iter_mut() {
+        if let Table::FromClauseSubquery(from_clause_subquery) = &mut table_reference.table {
+            // Recursively pre-materialize CTEs in this subquery's plan FIRST
+            pre_materialize_multi_ref_ctes(program, from_clause_subquery.plan.as_mut(), t_ctx)?;
+
+            // Then check if THIS subquery's CTE should be materialized
+            if let Some(cte_id) = from_clause_subquery.cte_id {
+                if program.get_materialized_cte(cte_id).is_some() {
+                    continue;
+                }
+                let is_multi_ref = program.get_cte_reference_count(cte_id) > 1;
+                if from_clause_subquery.materialize_hint || is_multi_ref {
+                    let (result_columns_start, cte_cursor_id, cte_table) = emit_materialized_cte(
+                        program,
+                        from_clause_subquery.plan.as_mut(),
+                        t_ctx,
+                        from_clause_subquery.columns.len(),
+                    )?;
+                    program.register_materialized_cte(
+                        cte_id,
+                        MaterializedCteInfo {
+                            cursor_id: cte_cursor_id,
+                            table: cte_table,
+                            result_columns_start_reg: result_columns_start,
+                            num_columns: from_clause_subquery.columns.len(),
+                        },
+                    );
+                    from_clause_subquery.result_columns_start_reg = Some(result_columns_start);
+                    program
+                        .set_subquery_result_reg(table_reference.internal_id, result_columns_start);
+                }
+            }
+        }
     }
 
     // Include hash-join build tables so EXPLAIN reflects all tables that feed the loop.

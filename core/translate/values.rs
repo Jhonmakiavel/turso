@@ -70,7 +70,7 @@ fn emit_values_when_single_row(
             NoConstantOptReason::RegisterReuse,
         )?;
     }
-    emit_values_to_destination(program, plan, t_ctx, start_reg, row_len, end_label);
+    emit_values_to_destination(program, plan, t_ctx, start_reg, row_len, end_label)?;
     program.preassign_label_to_next_insn(end_label);
     Ok(start_reg)
 }
@@ -120,7 +120,7 @@ fn emit_toplevel_values(
         });
     }
 
-    emit_values_to_destination(program, plan, t_ctx, copy_start_reg, row_len, end_label);
+    emit_values_to_destination(program, plan, t_ctx, copy_start_reg, row_len, end_label)?;
 
     program.preassign_label_to_next_insn(goto_label);
     program.emit_insn(Insn::Goto {
@@ -174,7 +174,7 @@ fn emit_values_to_destination(
     start_reg: usize,
     row_len: usize,
     end_label: BranchOffset,
-) {
+) -> Result<()> {
     match &plan.query_destination {
         QueryDestination::ResultRows => {
             program.emit_insn(Insn::ResultRow {
@@ -195,7 +195,7 @@ fn emit_values_to_destination(
             });
         }
         QueryDestination::EphemeralIndex { .. } => {
-            emit_values_to_index(program, plan, start_reg, row_len);
+            emit_values_to_index(program, plan, start_reg, row_len)?;
         }
         QueryDestination::EphemeralTable { .. } => {
             emit_values_to_table(program, plan, start_reg, row_len);
@@ -222,6 +222,7 @@ fn emit_values_to_destination(
         }
         QueryDestination::Unset => unreachable!("Unset query destination should not be reached"),
     }
+    Ok(())
 }
 
 fn emit_values_to_index(
@@ -229,7 +230,7 @@ fn emit_values_to_index(
     plan: &SelectPlan,
     start_reg: usize,
     row_len: usize,
-) {
+) -> Result<()> {
     let (cursor_id, index, is_delete) = match &plan.query_destination {
         QueryDestination::EphemeralIndex {
             cursor_id,
@@ -238,6 +239,15 @@ fn emit_values_to_index(
         } => (cursor_id, index, is_delete),
         _ => unreachable!(),
     };
+
+    if row_len != index.columns.len() {
+        crate::bail_corrupt_error!(
+            "VALUES column count {} does not match index column count {}",
+            row_len,
+            index.columns.len()
+        );
+    }
+
     if *is_delete {
         program.emit_insn(Insn::IdxDelete {
             start_reg,
@@ -247,9 +257,34 @@ fn emit_values_to_index(
         });
     } else {
         let record_reg = program.alloc_register();
+
+        // For ephemeral indexes with has_rowid, we need to add a rowid column to the record.
+        // This ensures each row gets a unique key even if column values are duplicated.
+        let (record_start, record_count) = if index.ephemeral && index.has_rowid {
+            let record_count = row_len + 1;
+            let record_start = program.alloc_registers(record_count);
+
+            for i in 0..row_len {
+                program.emit_insn(Insn::Copy {
+                    src_reg: start_reg + i,
+                    dst_reg: record_start + i,
+                    extra_amount: 0,
+                });
+            }
+
+            program.emit_insn(Insn::Sequence {
+                cursor_id: *cursor_id,
+                target_reg: record_start + row_len,
+            });
+
+            (record_start, record_count)
+        } else {
+            (start_reg, row_len)
+        };
+
         program.emit_insn(Insn::MakeRecord {
-            start_reg: to_u16(start_reg),
-            count: to_u16(row_len),
+            start_reg: to_u16(record_start),
+            count: to_u16(record_count),
             dest_reg: to_u16(record_reg),
             index_name: Some(index.name.clone()),
             affinity_str: None,
@@ -262,6 +297,7 @@ fn emit_values_to_index(
             flags: IdxInsertFlags::new().no_op_duplicate(),
         });
     }
+    Ok(())
 }
 
 fn emit_values_to_table(
