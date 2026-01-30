@@ -514,3 +514,58 @@ expect {
     ABC
 }
 
+test printf-bug-i64min-precision {
+    SELECT printf('%.3d', -9223372036854775808);
+}
+expect {
+    -9223372036854775808
+}
+
+test printf-bug-i64min-zeropad {
+    SELECT printf('%025d', -9223372036854775808);
+}
+expect {
+    -000009223372036854775808
+}
+
+test printf-bug-text-as-int {
+    SELECT printf('%d', '42');
+}
+expect {
+    42
+}
+
+test printf-bug-text-as-int-negative {
+    SELECT printf('%d', '-99');
+}
+expect {
+    -99
+}
+
+test printf-bug-text-as-int-trailing {
+    SELECT printf('%d', '123abc');
+}
+expect {
+    123
+}
+
+test printf-bug-width-string {
+    SELECT printf('%5s', 'hi');
+}
+expect raw {
+   hi
+}
+
+test printf-bug-width-string-exact {
+    SELECT printf('%3s', 'abc');
+}
+expect {
+    abc
+}
+
+test printf-bug-width-string-overflow {
+    SELECT printf('%2s', 'hello');
+}
+expect {
+    hello
+}
