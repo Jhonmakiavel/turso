@@ -65,6 +65,8 @@ use std::{
 use turso_macros::match_ignore_ascii_case;
 
 use crate::pseudo::PseudoCursor;
+#[allow(unused_imports)]
+use crate::turso_soft_unreachable;
 
 use crate::storage::btree::{BTreeCursor, BTreeKey};
 
@@ -477,6 +479,7 @@ pub fn op_compare(
     let count = *count;
 
     if start_reg_a + count > start_reg_b {
+        turso_soft_unreachable!("Compare registers overlap");
         return Err(LimboError::InternalError(
             "Compare registers overlap".to_string(),
         ));
@@ -514,6 +517,7 @@ pub fn op_jump(
     assert!(target_pc_gt.is_offset());
     let cmp = state.last_compare.take();
     if cmp.is_none() {
+        turso_soft_unreachable!("Jump without compare");
         return Err(LimboError::InternalError(
             "Jump without compare".to_string(),
         ));
@@ -582,6 +586,7 @@ pub fn op_if_pos(
             state.pc += 1;
         }
         _ => {
+            turso_soft_unreachable!("IfPos: the value in the register is not an integer");
             return Err(LimboError::InternalError(
                 "IfPos: the value in the register is not an integer".into(),
             ));
@@ -1036,6 +1041,7 @@ pub fn op_vcreate(
                 .map(|v| v.map(|v| v.to_ffi()))
                 .collect::<Result<_, _>>()?
         } else {
+            turso_soft_unreachable!("VCreate: args_reg is not a record");
             return Err(LimboError::InternalError(
                 "VCreate: args_reg is not a record".to_string(),
             ));
@@ -1148,6 +1154,7 @@ pub fn op_vupdate(
     }
 
     if *arg_count < 2 {
+        turso_soft_unreachable!("VUpdate: arg_count must be at least 2 (rowid and insert_rowid)");
         return Err(LimboError::InternalError(
             "VUpdate: arg_count must be at least 2 (rowid and insert_rowid)".to_string(),
         ));
@@ -1157,6 +1164,7 @@ pub fn op_vupdate(
         if let Some(value) = state.registers.get(*start_reg + i) {
             argv.push(value.get_value().clone());
         } else {
+            turso_soft_unreachable!("VUpdate: register out of bounds", { "register": *start_reg + i });
             return Err(LimboError::InternalError(format!(
                 "VUpdate: register out of bounds at {}",
                 *start_reg + i
@@ -1692,6 +1700,7 @@ pub fn op_make_record(
 
     if let Some(affinity_str) = affinity_str {
         if affinity_str.len() != count {
+            turso_soft_unreachable!("MakeRecord: the length of affinity string does not match the count", { "affinity_len": affinity_str.len(), "count": count });
             return Err(LimboError::InternalError(format!(
                 "MakeRecord: the length of affinity string ({}) does not match the count ({})",
                 affinity_str.len(),
@@ -2518,6 +2527,7 @@ pub fn op_return(
         state.pc = pc;
     } else {
         if !*can_fallthrough {
+            turso_soft_unreachable!("Return register is not an integer");
             return Err(LimboError::InternalError(
                 "Return register is not an integer".to_string(),
             ));
@@ -2840,6 +2850,7 @@ pub fn op_row_id(
                         state.registers[*dest] = Register::Value(Value::Null);
                     }
                 } else {
+                    turso_soft_unreachable!("RowId: cursor is not a table, virtual, or materialized view cursor");
                     return Err(LimboError::InternalError(
                         "RowId: cursor is not a table, virtual, or materialized view cursor"
                             .to_string(),
@@ -3728,6 +3739,7 @@ fn init_agg_payload(func: &AggFunc, payload: &mut Vec<Value>) -> Result<()> {
         }
         AggFunc::External(_) => {
             // External aggregates use ExternalAggState, not flat payload
+            turso_soft_unreachable!("External aggregate not supported in init_agg_payload");
             return Err(LimboError::InternalError(
                 "External aggregate not supported in init_agg_payload".to_string(),
             ));
@@ -3781,6 +3793,7 @@ fn update_agg_payload(
             if !matches!(arg, Value::Null) {
                 // invariant as per init_agg_payload: payload[0] is always an integer
                 let Value::Integer(i) = &mut payload[0] else {
+                    turso_soft_unreachable!("Count: payload is not an integer");
                     return Err(LimboError::InternalError(
                         "Count: payload is not an integer".to_string(),
                     ));
@@ -3791,6 +3804,7 @@ fn update_agg_payload(
         AggFunc::Count0 => {
             // invariant as per init_agg_payload: payload[0] is always an integer
             let Value::Integer(i) = &mut payload[0] else {
+                turso_soft_unreachable!("Count0: payload is not an integer");
                 return Err(LimboError::InternalError(
                     "Count0: payload is not an integer".to_string(),
                 ));
@@ -3803,16 +3817,19 @@ fn update_agg_payload(
             }
             // invariant as per init_agg_payload: payload[0] is Float (sum), payload[1] is Float (r_err), payload[2] is Integer (count)
             let [sum_val, r_err_val, count_val, ..] = payload else {
+                turso_soft_unreachable!("Avg: payload too short");
                 return Err(LimboError::InternalError(
                     "Avg: payload too short".to_string(),
                 ));
             };
             let Value::Float(r_err) = r_err_val else {
+                turso_soft_unreachable!("Avg: payload[1] is not a float");
                 return Err(LimboError::InternalError(
                     "Avg: payload[1] is not a float".to_string(),
                 ));
             };
             let Value::Integer(count) = count_val else {
+                turso_soft_unreachable!("Avg: payload[2] is not an integer");
                 return Err(LimboError::InternalError(
                     "Avg: payload[2] is not an integer".to_string(),
                 ));
@@ -3851,21 +3868,25 @@ fn update_agg_payload(
             // invariant as per init_agg_payload: payload[0] is acc (Null/Integer/Float),
             // payload[1] is Float (r_err), payload[2] is Integer (approx), payload[3] is Integer (ovrfl)
             let [acc, r_err_val, approx_val, ovrfl_val, ..] = payload else {
+                turso_soft_unreachable!("Sum/Total: payload too short");
                 return Err(LimboError::InternalError(
                     "Sum/Total: payload too short".to_string(),
                 ));
             };
             let Value::Float(r_err) = r_err_val else {
+                turso_soft_unreachable!("Sum/Total: payload[1] is not a float");
                 return Err(LimboError::InternalError(
                     "Sum/Total: payload[1] is not a float".to_string(),
                 ));
             };
             let Value::Integer(approx_i) = approx_val else {
+                turso_soft_unreachable!("Sum/Total: payload[2] is not an integer");
                 return Err(LimboError::InternalError(
                     "Sum/Total: payload[2] is not an integer".to_string(),
                 ));
             };
             let Value::Integer(ovrfl_i) = ovrfl_val else {
+                turso_soft_unreachable!("Sum/Total: payload[3] is not an integer");
                 return Err(LimboError::InternalError(
                     "Sum/Total: payload[3] is not an integer".to_string(),
                 ));
@@ -3968,6 +3989,7 @@ fn update_agg_payload(
             }
         }
         AggFunc::External(_) => {
+            turso_soft_unreachable!("External aggregate not supported in update_agg_payload");
             return Err(LimboError::InternalError(
                 "External aggregate not supported in update_agg_payload".to_string(),
             ));
@@ -3976,6 +3998,7 @@ fn update_agg_payload(
         AggFunc::JsonGroupObject | AggFunc::JsonbGroupObject => {
             // arg = key, maybe_arg2 = value
             let Some(value) = maybe_arg2 else {
+                turso_soft_unreachable!("JsonGroupObject/JsonbGroupObject: no value provided");
                 return Err(LimboError::InternalError(
                     "JsonGroupObject/JsonbGroupObject: no value provided".to_string(),
                 ));
@@ -3983,6 +4006,7 @@ fn update_agg_payload(
             let mut key_vec = convert_dbtype_to_raw_jsonb(&arg)?;
             let mut val_vec = convert_dbtype_to_raw_jsonb(&value)?;
             let Value::Blob(vec) = &mut payload[0] else {
+                turso_soft_unreachable!("JsonGroupObject: payload[0] is not a blob");
                 return Err(LimboError::InternalError(
                     "JsonGroupObject: payload[0] is not a blob".to_string(),
                 ));
@@ -3999,6 +4023,7 @@ fn update_agg_payload(
             // arg = value
             let mut data = convert_dbtype_to_raw_jsonb(&arg)?;
             let Value::Blob(vec) = &mut payload[0] else {
+                turso_soft_unreachable!("JsonGroupArray: payload[0] is not a blob");
                 return Err(LimboError::InternalError(
                     "JsonGroupArray: payload[0] is not a blob".to_string(),
                 ));
@@ -4077,6 +4102,7 @@ fn finalize_agg_payload(func: &AggFunc, payload: &[Value]) -> Result<Value> {
         AggFunc::GroupConcat | AggFunc::StringAgg => payload[0].clone(),
         AggFunc::External(_) => {
             // External aggregates are finalized via AggContext::compute_external()
+            turso_soft_unreachable!("finalize_agg_payload called for External aggregate");
             return Err(LimboError::InternalError(
                 "finalize_agg_payload called for External aggregate".to_string(),
             ));
@@ -4451,6 +4477,7 @@ pub fn op_sorter_compare(
 
     let previous_sorter_values = {
         let Register::Record(record) = &state.registers[*sorted_record_reg] else {
+            turso_soft_unreachable!("Sorted record must be a record");
             return Err(LimboError::InternalError(
                 "Sorted record must be a record".to_string(),
             ));
@@ -4468,6 +4495,7 @@ pub fn op_sorter_compare(
 
     let cursor = cursor.as_sorter_mut();
     let Some(current_sorter_record) = cursor.record() else {
+        turso_soft_unreachable!("Sorter must have a record");
         return Err(LimboError::InternalError(
             "Sorter must have a record".to_string(),
         ));
@@ -4513,6 +4541,7 @@ pub fn op_rowset_add(
     let rowid = match value {
         Value::Integer(i) => *i,
         _ => {
+            turso_soft_unreachable!("RowSetAdd: P2 must be an integer");
             return Err(LimboError::InternalError(
                 "RowSetAdd: P2 must be an integer".to_string(),
             ));
@@ -4601,6 +4630,7 @@ pub fn op_rowset_test(
     let rowid = match value {
         Value::Integer(i) => *i,
         _ => {
+            turso_soft_unreachable!("RowSetTest: P3 must be an integer");
             return Err(LimboError::InternalError(
                 "RowSetTest: P3 must be an integer".to_string(),
             ));
@@ -6937,11 +6967,13 @@ pub fn op_idx_insert(
 
     if let Some(Cursor::IndexMethod(cursor)) = &mut state.cursors[cursor_id] {
         let Some(start) = unpacked_start else {
+            turso_soft_unreachable!("IndexMethod must receive unpacked values");
             return Err(LimboError::InternalError(
                 "IndexMethod must receive unpacked values".to_string(),
             ));
         };
         let Some(count) = unpacked_count else {
+            turso_soft_unreachable!("IndexMethod must receive unpacked values");
             return Err(LimboError::InternalError(
                 "IndexMethod must receive unpacked values".to_string(),
             ));
@@ -6954,6 +6986,7 @@ pub fn op_idx_insert(
     let record_to_insert = match &state.registers[record_reg] {
         Register::Record(ref r) => r,
         o => {
+            turso_soft_unreachable!("expected record in register for idx insert", { "got": format!("{o:?}") });
             return Err(LimboError::InternalError(format!(
                 "expected record, got {o:?}"
             )));
@@ -7417,6 +7450,7 @@ pub fn op_no_conflict(
                 let contains_nulls = match &record_source {
                     RecordSource::Packed { record_reg } => {
                         let Register::Record(record) = &state.registers[*record_reg] else {
+                            turso_soft_unreachable!("NoConflict: expected a record in the register");
                             return Err(LimboError::InternalError(
                                 "NoConflict: expected a record in the register".into(),
                             ));
@@ -7512,6 +7546,7 @@ pub fn op_offset_limit(
     let limit_val = match state.registers[*limit_reg].get_value() {
         Value::Integer(val) => val,
         _ => {
+            turso_soft_unreachable!("OffsetLimit: the value in limit_reg is not an integer");
             return Err(LimboError::InternalError(
                 "OffsetLimit: the value in limit_reg is not an integer".into(),
             ));
@@ -7521,6 +7556,7 @@ pub fn op_offset_limit(
         Value::Integer(val) if *val < 0 => 0,
         Value::Integer(val) if *val >= 0 => *val,
         _ => {
+            turso_soft_unreachable!("OffsetLimit: the value in offset_reg is not an integer");
             return Err(LimboError::InternalError(
                 "OffsetLimit: the value in offset_reg is not an integer".into(),
             ));
@@ -7580,6 +7616,7 @@ pub fn op_open_write(
         RegisterOrLiteral::Register(reg) => match &state.registers[*reg].get_value() {
             Value::Integer(val) => *val,
             _ => {
+                turso_soft_unreachable!("OpenWrite: the value in root_page is not an integer");
                 return Err(LimboError::InternalError(
                     "OpenWrite: the value in root_page is not an integer".into(),
                 ));
@@ -7592,6 +7629,7 @@ pub fn op_open_write(
     if root_page == SQLITE_SCHEMA_ROOT_PAGE {
         if let Some(mv_store) = mv_store.as_ref() {
             let Some(tx_id) = program.connection.get_mv_tx_id() else {
+                turso_soft_unreachable!("Schema changes in MVCC mode require an exclusive MVCC transaction");
                 return Err(LimboError::InternalError(
                     "Schema changes in MVCC mode require an exclusive MVCC transaction".to_string(),
                 ));
@@ -8202,6 +8240,7 @@ pub fn op_populate_materialized_views(
             let root_page = match cursor {
                 crate::types::Cursor::BTree(btree_cursor) => btree_cursor.root_page(),
                 _ => {
+                    turso_soft_unreachable!("Expected BTree cursor for materialized view");
                     return Err(LimboError::InternalError(
                         "Expected BTree cursor for materialized view".into(),
                     ))
@@ -8236,6 +8275,7 @@ pub fn op_populate_materialized_views(
             let btree_cursor = match cursor {
                 crate::types::Cursor::BTree(btree_cursor) => btree_cursor,
                 _ => {
+                    turso_soft_unreachable!("Expected BTree cursor for materialized view population");
                     return Err(LimboError::InternalError(
                         "Expected BTree cursor for materialized view population".into(),
                     ))
@@ -8625,6 +8665,7 @@ pub fn op_open_ephemeral(
                     let rand_path = std::path::Path::new(&temp_dir)
                         .join(format!("tursodb-ephemeral-{rand_num}"));
                     let Some(rand_path_str) = rand_path.to_str() else {
+                        turso_soft_unreachable!("Failed to convert path to string");
                         return Err(LimboError::InternalError(
                             "Failed to convert path to string".to_string(),
                         ));
@@ -8960,6 +9001,7 @@ pub fn op_affinity(
     );
 
     if affinities.len() != count.get() {
+        turso_soft_unreachable!("Affinity: the length of affinities does not match the count");
         return Err(LimboError::InternalError(
             "Affinity: the length of affinities does not match the count".into(),
         ));
@@ -10664,6 +10706,7 @@ pub fn op_hash_build(
                 })?
             }
             _ => {
+                turso_soft_unreachable!("HashBuild: unsupported cursor type");
                 return Err(LimboError::InternalError(
                     "HashBuild: unsupported cursor type".to_string(),
                 ));
@@ -11137,6 +11180,7 @@ pub fn op_max_pgcnt(
     load_insn!(MaxPgcnt { db, dest, new_max }, insn);
 
     if *db > 0 {
+        turso_soft_unreachable!("temp/attached databases not implemented yet");
         return Err(LimboError::InternalError(
             "temp/attached databases not implemented yet".to_string(),
         ));
@@ -11217,6 +11261,7 @@ fn op_journal_mode_inner(
 
     load_insn!(JournalMode { db, dest, new_mode }, insn);
     if *db > 0 {
+        turso_soft_unreachable!("temp/attached databases not implemented yet");
         return Err(LimboError::InternalError(
             "temp/attached databases not implemented yet".to_string(),
         ));
