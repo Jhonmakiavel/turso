@@ -7,14 +7,12 @@ use crate::{
     io::ReadComplete,
     mvcc::database::{LogRecord, MVTableId, Row, RowID, RowKey, RowVersion, SortableIndexKey},
     storage::sqlite3_ondisk::{read_varint, write_varint_to_vec},
-    turso_assert,
     types::{ImmutableRecord, IndexInfo},
     Buffer, Completion, CompletionError, LimboError, Result,
 };
 
-use crate::turso_assert_eq;
-use crate::turso_assert_less_than;
 use crate::File;
+use turso_macros::{turso_assert, turso_assert_eq, turso_assert_less_than};
 
 /// Logical log size in bytes at which a committing transaction will trigger a checkpoint.
 /// Default to the size of 1000 SQLite WAL frames; disable by setting a negative value.
