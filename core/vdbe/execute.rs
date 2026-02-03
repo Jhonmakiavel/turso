@@ -65,7 +65,7 @@ use std::{
 use turso_macros::match_ignore_ascii_case;
 
 use crate::pseudo::PseudoCursor;
-#[allow(unused_imports)]
+use crate::turso_assert_reachable;
 use crate::turso_soft_unreachable;
 
 use crate::storage::btree::{BTreeCursor, BTreeKey};
@@ -179,6 +179,7 @@ pub fn op_init(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Init");
     load_insn!(Init { target_pc }, insn);
     if !target_pc.is_offset() {
         crate::bail_corrupt_error!("Unresolved label: {target_pc:?}");
@@ -193,6 +194,7 @@ pub fn op_add(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Add");
     load_insn!(Add { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -209,6 +211,7 @@ pub fn op_subtract(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Subtract");
     load_insn!(Subtract { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -225,6 +228,7 @@ pub fn op_multiply(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Multiply");
     load_insn!(Multiply { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -241,6 +245,7 @@ pub fn op_divide(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Divide");
     load_insn!(Divide { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -257,6 +262,7 @@ pub fn op_drop_index(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DropIndex");
     load_insn!(DropIndex { index, db: _ }, insn);
     let conn = program.connection.clone();
     let is_mvcc = conn.mv_store().is_some();
@@ -279,6 +285,7 @@ pub fn op_remainder(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Remainder");
     load_insn!(Remainder { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -295,6 +302,7 @@ pub fn op_bit_and(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: BitAnd");
     load_insn!(BitAnd { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -311,6 +319,7 @@ pub fn op_bit_or(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: BitOr");
     load_insn!(BitOr { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -327,6 +336,7 @@ pub fn op_bit_not(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: BitNot");
     load_insn!(BitNot { reg, dest }, insn);
     state.registers[*dest] = Register::Value(state.registers[*reg].get_value().exec_bit_not());
     state.pc += 1;
@@ -339,6 +349,7 @@ pub fn op_checkpoint(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Checkpoint");
     load_insn!(
         Checkpoint {
             database: _,
@@ -427,6 +438,7 @@ pub fn op_null(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Null");
     match insn {
         Insn::Null { dest, dest_end } | Insn::BeginSubrtn { dest, dest_end } => {
             if let Some(dest_end) = dest_end {
@@ -449,6 +461,7 @@ pub fn op_null_row(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: NullRow");
     load_insn!(NullRow { cursor_id }, insn);
     {
         let cursor = must_be_btree_cursor!(*cursor_id, program.cursor_ref, state, "NullRow");
@@ -465,6 +478,7 @@ pub fn op_compare(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Compare");
     load_insn!(
         Compare {
             start_reg_a,
@@ -504,6 +518,7 @@ pub fn op_jump(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Jump");
     load_insn!(
         Jump {
             target_pc_lt,
@@ -537,6 +552,7 @@ pub fn op_move(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Move");
     load_insn!(
         Move {
             source_reg,
@@ -564,6 +580,7 @@ pub fn op_if_pos(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IfPos");
     load_insn!(
         IfPos {
             reg,
@@ -601,6 +618,7 @@ pub fn op_not_null(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: NotNull");
     load_insn!(NotNull { reg, target_pc }, insn);
     if !target_pc.is_offset() {
         crate::bail_corrupt_error!("Unresolved label: {target_pc:?}");
@@ -624,6 +642,7 @@ pub fn op_comparison(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Comparison");
     let (lhs, rhs, target_pc, flags, collation, op) = match insn {
         Insn::Eq {
             lhs,
@@ -796,6 +815,7 @@ pub fn op_if(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: If");
     load_insn!(
         If {
             reg,
@@ -824,6 +844,7 @@ pub fn op_if_not(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IfNot");
     load_insn!(
         IfNot {
             reg,
@@ -852,6 +873,7 @@ pub fn op_open_read(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: OpenRead");
     load_insn!(
         OpenRead {
             cursor_id,
@@ -1001,6 +1023,7 @@ pub fn op_vopen(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VOpen");
     load_insn!(VOpen { cursor_id }, insn);
     let (_, cursor_type) = program
         .cursor_ref
@@ -1025,6 +1048,7 @@ pub fn op_vcreate(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VCreate");
     load_insn!(
         VCreate {
             module_name,
@@ -1065,6 +1089,7 @@ pub fn op_vfilter(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VFilter");
     load_insn!(
         VFilter {
             cursor_id,
@@ -1108,6 +1133,7 @@ pub fn op_vcolumn(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VColumn");
     load_insn!(
         VColumn {
             cursor_id,
@@ -1132,6 +1158,7 @@ pub fn op_vupdate(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VUpdate");
     load_insn!(
         VUpdate {
             cursor_id,
@@ -1200,6 +1227,7 @@ pub fn op_vnext(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VNext");
     load_insn!(
         VNext {
             cursor_id,
@@ -1228,6 +1256,7 @@ pub fn op_vdestroy(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VDestroy");
     load_insn!(VDestroy { db: _, table_name }, insn);
     let conn = program.connection.clone();
     {
@@ -1249,6 +1278,7 @@ pub fn op_vbegin(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VBegin");
     load_insn!(VBegin { cursor_id }, insn);
     let cursor = state.get_cursor(*cursor_id);
     let cursor = cursor.as_virtual_mut();
@@ -1275,6 +1305,7 @@ pub fn op_vrename(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VRename");
     load_insn!(
         VRename {
             cursor_id,
@@ -1305,6 +1336,7 @@ pub fn op_open_pseudo(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: OpenPseudo");
     load_insn!(
         OpenPseudo {
             cursor_id,
@@ -1331,6 +1363,7 @@ pub fn op_rewind(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Rewind");
     load_insn!(
         Rewind {
             cursor_id,
@@ -1369,6 +1402,7 @@ pub fn op_last(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Last");
     load_insn!(
         Last {
             cursor_id,
@@ -1413,6 +1447,7 @@ pub fn op_column(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Column");
     load_insn!(
         Column {
             cursor_id,
@@ -1623,6 +1658,7 @@ pub fn op_type_check(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: TypeCheck");
     load_insn!(
         TypeCheck {
             start_reg,
@@ -1683,6 +1719,7 @@ pub fn op_make_record(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: MakeRecord");
     load_insn!(
         MakeRecord {
             start_reg,
@@ -1726,6 +1763,7 @@ pub fn op_mem_max(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: MemMax");
     load_insn!(MemMax { dest_reg, src_reg }, insn);
 
     let dest_val = state.registers[*dest_reg].get_value();
@@ -1748,6 +1786,7 @@ pub fn op_result_row(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ResultRow");
     load_insn!(ResultRow { start_reg, count }, insn);
     let row = Row {
         values: &state.registers[*start_reg] as *const Register,
@@ -1764,6 +1803,7 @@ pub fn op_next(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Next");
     load_insn!(
         Next {
             cursor_id,
@@ -1817,6 +1857,7 @@ pub fn op_prev(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Prev");
     load_insn!(
         Prev {
             cursor_id,
@@ -2047,6 +2088,7 @@ pub fn op_halt(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Halt");
     load_insn!(
         Halt {
             err_code,
@@ -2063,6 +2105,7 @@ pub fn op_halt_if_null(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HaltIfNull");
     load_insn!(
         HaltIfNull {
             target_reg,
@@ -2092,6 +2135,7 @@ pub fn op_transaction(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Transaction");
     let result = op_transaction_inner(program, state, insn, pager);
     tracing::debug!(
         "op_transaction: end: state={:?}, tx_state={:?}",
@@ -2113,6 +2157,7 @@ pub fn op_transaction_inner(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: TransactionInner");
     load_insn!(
         Transaction {
             db,
@@ -2338,6 +2383,7 @@ pub fn op_auto_commit(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: AutoCommit");
     load_insn!(
         AutoCommit {
             auto_commit,
@@ -2478,6 +2524,7 @@ pub fn op_goto(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Goto");
     load_insn!(Goto { target_pc }, insn);
     if !target_pc.is_offset() {
         crate::bail_corrupt_error!("Unresolved label: {target_pc:?}");
@@ -2492,6 +2539,7 @@ pub fn op_gosub(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Gosub");
     load_insn!(
         Gosub {
             target_pc,
@@ -2513,6 +2561,7 @@ pub fn op_return(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Return");
     load_insn!(
         Return {
             return_reg,
@@ -2543,6 +2592,7 @@ pub fn op_integer(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Integer");
     load_insn!(Integer { value, dest }, insn);
     state.registers[*dest] = Register::Value(Value::Integer(*value));
     state.pc += 1;
@@ -2565,6 +2615,7 @@ pub fn op_program(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Program");
     load_insn!(
         Program {
             params,
@@ -2662,6 +2713,7 @@ pub fn op_real(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Real");
     load_insn!(Real { value, dest }, insn);
     state.registers[*dest] = Register::Value(Value::Float(*value));
     state.pc += 1;
@@ -2674,6 +2726,7 @@ pub fn op_real_affinity(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RealAffinity");
     load_insn!(RealAffinity { register }, insn);
     if let Value::Integer(i) = &state.registers[*register].get_value() {
         state.registers[*register] = Register::Value(Value::Float(*i as f64));
@@ -2688,6 +2741,7 @@ pub fn op_string8(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: String8");
     load_insn!(String8 { value, dest }, insn);
     state.registers[*dest] = Register::Value(Value::build_text(value.clone()));
     state.pc += 1;
@@ -2700,6 +2754,7 @@ pub fn op_blob(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Blob");
     load_insn!(Blob { value, dest }, insn);
     state.registers[*dest] = Register::Value(Value::Blob(value.clone()));
     state.pc += 1;
@@ -2712,6 +2767,7 @@ pub fn op_row_data(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RowData");
     load_insn!(RowData { cursor_id, dest }, insn);
 
     let record = {
@@ -2753,6 +2809,7 @@ pub fn op_row_id(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RowId");
     load_insn!(RowId { cursor_id, dest }, insn);
     loop {
         match state.op_row_id_state {
@@ -2850,7 +2907,9 @@ pub fn op_row_id(
                         state.registers[*dest] = Register::Value(Value::Null);
                     }
                 } else {
-                    turso_soft_unreachable!("RowId: cursor is not a table, virtual, or materialized view cursor");
+                    turso_soft_unreachable!(
+                        "RowId: cursor is not a table, virtual, or materialized view cursor"
+                    );
                     return Err(LimboError::InternalError(
                         "RowId: cursor is not a table, virtual, or materialized view cursor"
                             .to_string(),
@@ -2872,6 +2931,7 @@ pub fn op_idx_row_id(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxRowId");
     load_insn!(IdxRowId { cursor_id, dest }, insn);
     let cursors = &mut state.cursors;
     let cursor = cursors
@@ -2899,6 +2959,7 @@ pub fn op_seek_rowid(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SeekRowid");
     load_insn!(
         SeekRowid {
             cursor_id,
@@ -2988,6 +3049,7 @@ pub fn op_deferred_seek(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DeferredSeek");
     load_insn!(
         DeferredSeek {
             index_cursor_id,
@@ -3033,6 +3095,7 @@ pub fn op_seek(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Seek");
     let (cursor_id, is_index, record_source, target_pc) = match insn {
         Insn::SeekGE {
             cursor_id,
@@ -3446,6 +3509,7 @@ pub fn op_idx_ge(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxGE");
     load_insn!(
         IdxGE {
             cursor_id,
@@ -3499,6 +3563,7 @@ pub fn op_seek_end(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SeekEnd");
     load_insn!(SeekEnd { cursor_id }, *insn);
     {
         let cursor = state.get_cursor(cursor_id);
@@ -3516,6 +3581,7 @@ pub fn op_idx_le(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxLE");
     load_insn!(
         IdxLE {
             cursor_id,
@@ -3563,6 +3629,7 @@ pub fn op_idx_gt(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxGT");
     load_insn!(
         IdxGT {
             cursor_id,
@@ -3610,6 +3677,7 @@ pub fn op_idx_lt(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxLT");
     load_insn!(
         IdxLT {
             cursor_id,
@@ -3657,6 +3725,7 @@ pub fn op_decr_jump_zero(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DecrJumpZero");
     load_insn!(DecrJumpZero { reg, target_pc }, insn);
     if !target_pc.is_offset() {
         crate::bail_corrupt_error!("Unresolved label: {target_pc:?}");
@@ -4138,6 +4207,7 @@ pub fn op_agg_step(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: AggStep");
     load_insn!(
         AggStep {
             acc_reg,
@@ -4239,6 +4309,7 @@ pub fn op_agg_final(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: AggFinal");
     let (acc_reg, dest_reg, func) = match insn {
         Insn::AggFinal { register, func } => (*register, *register, func),
         Insn::AggValue {
@@ -4290,6 +4361,7 @@ pub fn op_sorter_open(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SorterOpen");
     load_insn!(
         SorterOpen {
             cursor_id,
@@ -4342,6 +4414,7 @@ pub fn op_sorter_data(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SorterData");
     load_insn!(
         SorterData {
             cursor_id,
@@ -4377,6 +4450,7 @@ pub fn op_sorter_insert(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SorterInsert");
     load_insn!(
         SorterInsert {
             cursor_id,
@@ -4403,6 +4477,7 @@ pub fn op_sorter_sort(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SorterSort");
     load_insn!(
         SorterSort {
             cursor_id,
@@ -4437,6 +4512,7 @@ pub fn op_sorter_next(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SorterNext");
     load_insn!(
         SorterNext {
             cursor_id,
@@ -4465,6 +4541,7 @@ pub fn op_sorter_compare(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SorterCompare");
     load_insn!(
         SorterCompare {
             cursor_id,
@@ -4529,6 +4606,7 @@ pub fn op_rowset_add(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RowSetAdd");
     load_insn!(
         RowSetAdd {
             rowset_reg,
@@ -4564,6 +4642,7 @@ pub fn op_rowset_read(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RowSetRead");
     load_insn!(
         RowSetRead {
             rowset_reg,
@@ -4615,6 +4694,7 @@ pub fn op_rowset_test(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RowSetTest");
     load_insn!(
         RowSetTest {
             rowset_reg,
@@ -4666,6 +4746,7 @@ pub fn op_function(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Function");
     load_insn!(
         Function {
             constant_mask: _,
@@ -6296,6 +6377,7 @@ pub fn op_sequence(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Sequence");
     load_insn!(
         Sequence {
             cursor_id,
@@ -6320,6 +6402,7 @@ pub fn op_sequence_test(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SequenceTest");
     load_insn!(
         SequenceTest {
             cursor_id,
@@ -6348,6 +6431,7 @@ pub fn op_init_coroutine(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: InitCoroutine");
     load_insn!(
         InitCoroutine {
             yield_reg,
@@ -6375,6 +6459,7 @@ pub fn op_end_coroutine(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: EndCoroutine");
     load_insn!(EndCoroutine { yield_reg }, insn);
 
     if let Value::Integer(pc) = state.registers[*yield_reg].get_value() {
@@ -6395,6 +6480,7 @@ pub fn op_yield(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Yield");
     load_insn!(
         Yield {
             yield_reg,
@@ -6453,6 +6539,7 @@ pub fn op_insert(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Insert");
     load_insn!(
         Insert {
             cursor: cursor_id,
@@ -6696,6 +6783,7 @@ pub fn op_int_64(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Int64");
     load_insn!(
         Int64 {
             _p1,
@@ -6730,6 +6818,7 @@ pub fn op_delete(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Delete");
     load_insn!(
         Delete {
             cursor_id,
@@ -6838,6 +6927,7 @@ pub fn op_idx_delete(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxDelete");
     load_insn!(
         IdxDelete {
             cursor_id,
@@ -6953,6 +7043,7 @@ pub fn op_idx_insert(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IdxInsert");
     load_insn!(
         IdxInsert {
             cursor_id,
@@ -7128,6 +7219,7 @@ pub fn op_new_rowid(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: NewRowid");
     new_rowid_inner(program, state, insn, pager).inspect_err(|_| {
         // In case of error we need to unlock rowid lock from mvcc cursor
         load_insn!(
@@ -7373,6 +7465,7 @@ pub fn op_must_be_int(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: MustBeInt");
     load_insn!(MustBeInt { reg }, insn);
     match &state.registers[*reg].get_value() {
         Value::Integer(_) => {}
@@ -7402,6 +7495,7 @@ pub fn op_soft_null(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SoftNull");
     load_insn!(SoftNull { reg }, insn);
     state.registers[*reg] = Register::Value(Value::Null);
     state.pc += 1;
@@ -7422,6 +7516,7 @@ pub fn op_no_conflict(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: NoConflict");
     load_insn!(
         NoConflict {
             cursor_id,
@@ -7450,7 +7545,9 @@ pub fn op_no_conflict(
                 let contains_nulls = match &record_source {
                     RecordSource::Packed { record_reg } => {
                         let Register::Record(record) = &state.registers[*record_reg] else {
-                            turso_soft_unreachable!("NoConflict: expected a record in the register");
+                            turso_soft_unreachable!(
+                                "NoConflict: expected a record in the register"
+                            );
                             return Err(LimboError::InternalError(
                                 "NoConflict: expected a record in the register".into(),
                             ));
@@ -7509,6 +7606,7 @@ pub fn op_not_exists(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: NotExists");
     load_insn!(
         NotExists {
             cursor,
@@ -7535,6 +7633,7 @@ pub fn op_offset_limit(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: OffsetLimit");
     load_insn!(
         OffsetLimit {
             limit_reg,
@@ -7581,6 +7680,7 @@ pub fn op_open_write(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: OpenWrite");
     load_insn!(
         OpenWrite {
             cursor_id,
@@ -7629,7 +7729,9 @@ pub fn op_open_write(
     if root_page == SQLITE_SCHEMA_ROOT_PAGE {
         if let Some(mv_store) = mv_store.as_ref() {
             let Some(tx_id) = program.connection.get_mv_tx_id() else {
-                turso_soft_unreachable!("Schema changes in MVCC mode require an exclusive MVCC transaction");
+                turso_soft_unreachable!(
+                    "Schema changes in MVCC mode require an exclusive MVCC transaction"
+                );
                 return Err(LimboError::InternalError(
                     "Schema changes in MVCC mode require an exclusive MVCC transaction".to_string(),
                 ));
@@ -7726,6 +7828,7 @@ pub fn op_copy(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Copy");
     load_insn!(
         Copy {
             src_reg,
@@ -7747,6 +7850,7 @@ pub fn op_create_btree(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: CreateBtree");
     load_insn!(CreateBtree { db, root, flags }, insn);
 
     assert_eq!(*db, 0);
@@ -7779,6 +7883,7 @@ pub fn op_index_method_create(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IndexMethodCreate");
     load_insn!(IndexMethodCreate { db, cursor_id }, insn);
     assert_eq!(*db, 0);
     if program.connection.is_readonly(*db) {
@@ -7811,6 +7916,7 @@ pub fn op_index_method_destroy(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IndexMethodDestroy");
     load_insn!(IndexMethodDestroy { db, cursor_id }, insn);
     assert_eq!(*db, 0);
     if program.connection.is_readonly(*db) {
@@ -7843,6 +7949,7 @@ pub fn op_index_method_optimize(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IndexMethodOptimize");
     load_insn!(IndexMethodOptimize { db, cursor_id }, insn);
     assert_eq!(*db, 0);
     if program.connection.is_readonly(*db) {
@@ -7875,6 +7982,7 @@ pub fn op_index_method_query(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IndexMethodQuery");
     load_insn!(
         IndexMethodQuery {
             db,
@@ -7915,6 +8023,7 @@ pub fn op_destroy(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Destroy");
     load_insn!(
         Destroy {
             root,
@@ -7960,6 +8069,7 @@ pub fn op_reset_sorter(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ResetSorter");
     load_insn!(ResetSorter { cursor_id }, insn);
 
     let (_, cursor_type) = program
@@ -7989,6 +8099,7 @@ pub fn op_drop_table(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DropTable");
     load_insn!(DropTable { db, table_name, .. }, insn);
     if *db > 0 {
         todo!("temp databases not implemented yet");
@@ -8035,6 +8146,7 @@ pub fn op_drop_view(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DropView");
     load_insn!(DropView { db, view_name }, insn);
     if *db > 0 {
         todo!("temp databases not implemented yet");
@@ -8054,6 +8166,7 @@ pub fn op_drop_trigger(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DropTrigger");
     load_insn!(
         DropTrigger {
             db: _,
@@ -8077,6 +8190,7 @@ pub fn op_close(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Close");
     load_insn!(Close { cursor_id }, insn);
     let cursors = &mut state.cursors;
     cursors
@@ -8096,6 +8210,7 @@ pub fn op_is_null(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IsNull");
     load_insn!(IsNull { reg, target_pc }, insn);
     if matches!(state.registers[*reg], Register::Value(Value::Null)) {
         state.pc = target_pc.as_offset_int();
@@ -8111,6 +8226,7 @@ pub fn op_coll_seq(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: CollSeq");
     let Insn::CollSeq { reg, collation } = insn else {
         unreachable!("unexpected Insn {:?}", insn)
     };
@@ -8133,6 +8249,7 @@ pub fn op_page_count(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: PageCount");
     load_insn!(PageCount { db, dest }, insn);
     if *db > 0 {
         // TODO: implement temp databases
@@ -8157,6 +8274,7 @@ pub fn op_parse_schema(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ParseSchema");
     load_insn!(
         ParseSchema {
             db: _,
@@ -8220,6 +8338,7 @@ pub fn op_populate_materialized_views(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: PopulateMaterializedViews");
     load_insn!(PopulateMaterializedViews { cursors }, insn);
 
     let conn = program.connection.clone();
@@ -8243,7 +8362,7 @@ pub fn op_populate_materialized_views(
                     turso_soft_unreachable!("Expected BTree cursor for materialized view");
                     return Err(LimboError::InternalError(
                         "Expected BTree cursor for materialized view".into(),
-                    ))
+                    ));
                 }
             };
 
@@ -8275,10 +8394,12 @@ pub fn op_populate_materialized_views(
             let btree_cursor = match cursor {
                 crate::types::Cursor::BTree(btree_cursor) => btree_cursor,
                 _ => {
-                    turso_soft_unreachable!("Expected BTree cursor for materialized view population");
+                    turso_soft_unreachable!(
+                        "Expected BTree cursor for materialized view population"
+                    );
                     return Err(LimboError::InternalError(
                         "Expected BTree cursor for materialized view population".into(),
-                    ))
+                    ));
                 }
             };
 
@@ -8298,6 +8419,7 @@ pub fn op_read_cookie(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ReadCookie");
     load_insn!(ReadCookie { db, dest, cookie }, insn);
     if *db > 0 {
         // TODO: implement temp databases
@@ -8328,6 +8450,7 @@ pub fn op_set_cookie(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: SetCookie");
     load_insn!(
         SetCookie {
             db,
@@ -8386,6 +8509,7 @@ pub fn op_shift_right(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ShiftRight");
     load_insn!(ShiftRight { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -8402,6 +8526,7 @@ pub fn op_shift_left(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ShiftLeft");
     load_insn!(ShiftLeft { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -8418,6 +8543,7 @@ pub fn op_add_imm(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: AddImm");
     load_insn!(AddImm { register, value }, insn);
 
     let current = &state.registers[*register];
@@ -8446,6 +8572,7 @@ pub fn op_variable(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Variable");
     load_insn!(Variable { index, dest }, insn);
     state.registers[*dest] = Register::Value(state.get_parameter(*index));
     state.pc += 1;
@@ -8458,6 +8585,7 @@ pub fn op_zero_or_null(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: ZeroOrNull");
     load_insn!(ZeroOrNull { rg1, rg2, dest }, insn);
     if state.registers[*rg1].is_null() || state.registers[*rg2].is_null() {
         state.registers[*dest] = Register::Value(Value::Null)
@@ -8474,6 +8602,7 @@ pub fn op_not(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Not");
     load_insn!(Not { reg, dest }, insn);
     state.registers[*dest] = Register::Value(state.registers[*reg].get_value().exec_boolean_not());
     state.pc += 1;
@@ -8490,6 +8619,7 @@ pub fn op_is_true(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IsTrue");
     load_insn!(
         IsTrue {
             reg,
@@ -8531,6 +8661,7 @@ pub fn op_concat(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Concat");
     load_insn!(Concat { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -8547,6 +8678,7 @@ pub fn op_and(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: And");
     load_insn!(And { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -8563,6 +8695,7 @@ pub fn op_or(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Or");
     load_insn!(Or { lhs, rhs, dest }, insn);
     state.registers[*dest] = Register::Value(
         state.registers[*lhs]
@@ -8579,6 +8712,7 @@ pub fn op_noop(
     _insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Noop");
     // Do nothing
     // Advance the program counter for the next opcode
     state.pc += 1;
@@ -8611,6 +8745,7 @@ pub fn op_open_ephemeral(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: OpenEphemeral");
     let (cursor_id, is_table) = match insn {
         Insn::OpenEphemeral {
             cursor_id,
@@ -8826,6 +8961,7 @@ pub fn op_open_dup(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: OpenDup");
     load_insn!(
         OpenDup {
             new_cursor_id,
@@ -8908,6 +9044,7 @@ pub fn op_once(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Once");
     load_insn!(
         Once {
             target_pc_when_reentered,
@@ -8931,6 +9068,7 @@ pub fn op_found(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Found");
     let (cursor_id, target_pc, record_reg, num_regs) = match insn {
         Insn::NotFound {
             cursor_id,
@@ -8991,6 +9129,7 @@ pub fn op_affinity(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Affinity");
     load_insn!(
         Affinity {
             start_reg,
@@ -9025,6 +9164,7 @@ pub fn op_count(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Count");
     load_insn!(
         Count {
             cursor_id,
@@ -9223,6 +9363,7 @@ pub fn op_integrity_check(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IntegrityCheck");
     load_insn!(
         IntegrityCk {
             max_errors,
@@ -10111,6 +10252,7 @@ pub fn op_cast(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Cast");
     load_insn!(Cast { reg, affinity }, insn);
 
     let value = state.registers[*reg].get_value().clone();
@@ -10133,6 +10275,7 @@ pub fn op_rename_table(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: RenameTable");
     load_insn!(RenameTable { from, to }, insn);
 
     let normalized_from = normalize_ident(from.as_str());
@@ -10202,6 +10345,7 @@ pub fn op_drop_column(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: DropColumn");
     load_insn!(
         DropColumn {
             table,
@@ -10300,6 +10444,7 @@ pub fn op_add_column(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: AddColumn");
     load_insn!(AddColumn { table, column }, insn);
 
     let conn = program.connection.clone();
@@ -10330,6 +10475,7 @@ pub fn op_alter_column(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: AlterColumn");
     load_insn!(
         AlterColumn {
             table: table_name,
@@ -10480,6 +10626,7 @@ pub fn op_if_neg(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: IfNeg");
     load_insn!(IfNeg { reg, target_pc }, insn);
 
     match &state.registers[*reg] {
@@ -10551,6 +10698,7 @@ pub fn op_fk_counter(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: FkCounter");
     load_insn!(
         FkCounter {
             increment_value,
@@ -10580,6 +10728,7 @@ pub fn op_fk_if_zero(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: FkIfZero");
     load_insn!(
         FkIfZero {
             deferred,
@@ -10619,6 +10768,7 @@ pub fn op_hash_build(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashBuild");
     load_insn!(HashBuild { data }, insn);
 
     let mut op_state = state
@@ -10749,6 +10899,7 @@ pub fn op_hash_distinct(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashDistinct");
     load_insn!(HashDistinct { data }, insn);
 
     let temp_store = program.connection.get_temp_store();
@@ -10800,6 +10951,7 @@ pub fn op_hash_build_finalize(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashBuildFinalize");
     load_insn!(HashBuildFinalize { hash_table_id }, insn);
     if let Some(ht) = state.hash_tables.get_mut(hash_table_id) {
         // Finalize the build phase, may flush remaining partitions to disk if spilled
@@ -10837,6 +10989,7 @@ pub fn op_hash_probe(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashProbe");
     load_insn!(
         HashProbe {
             hash_table_id,
@@ -10952,6 +11105,7 @@ pub fn op_hash_next(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashNext");
     load_insn!(
         HashNext {
             hash_table_id,
@@ -10991,6 +11145,7 @@ pub fn op_hash_close(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashClose");
     load_insn!(HashClose { hash_table_id }, insn);
     if let Some(mut hash_table) = state.hash_tables.remove(hash_table_id) {
         hash_table.close();
@@ -11005,6 +11160,7 @@ pub fn op_hash_clear(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: HashClear");
     load_insn!(HashClear { hash_table_id }, insn);
     if let Some(hash_table) = state.hash_tables.get_mut(hash_table_id) {
         hash_table.clear();
@@ -11177,6 +11333,7 @@ pub fn op_max_pgcnt(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: MaxPgcnt");
     load_insn!(MaxPgcnt { db, dest, new_max }, insn);
 
     if *db > 0 {
@@ -11235,6 +11392,7 @@ pub fn op_journal_mode(
     insn: &Insn,
     pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: JournalMode");
     match op_journal_mode_inner(program, state, insn, pager) {
         Ok(result) => {
             if !matches!(result, InsnFunctionStepResult::IO(_)) {
@@ -11442,6 +11600,7 @@ pub fn op_filter(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: Filter");
     load_insn!(
         Filter {
             cursor_id,
@@ -11492,6 +11651,7 @@ pub fn op_filter_add(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: FilterAdd");
     load_insn!(
         FilterAdd {
             cursor_id,
@@ -11633,6 +11793,7 @@ pub fn op_vacuum_into(
     insn: &Insn,
     _pager: &Arc<Pager>,
 ) -> Result<InsnFunctionStepResult> {
+    turso_assert_reachable!("opcode: VacuumInto");
     match op_vacuum_into_inner(program, state, insn) {
         Ok(InsnFunctionStepResult::Step) => {
             // Instruction complete, reset state
