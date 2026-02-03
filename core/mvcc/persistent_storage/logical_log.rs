@@ -12,7 +12,7 @@ use crate::{
 };
 
 use crate::File;
-use turso_macros::{turso_assert, turso_assert_eq, turso_assert_less_than};
+use turso_macros::{turso_assert, turso_assert_eq, turso_assert_less_than, turso_debug_assert};
 
 /// Logical log size in bytes at which a committing transaction will trigger a checkpoint.
 /// Default to the size of 1000 SQLite WAL frames; disable by setting a negative value.
@@ -52,7 +52,7 @@ impl LogHeader {
 
         let header_size_before_padding = buffer.len() - buffer_size_start;
         let padding = 64 - header_size_before_padding;
-        debug_assert!(header_size_before_padding <= LOG_HEADER_MAX_SIZE);
+        turso_debug_assert!(header_size_before_padding <= LOG_HEADER_MAX_SIZE);
         buffer.extend_from_slice(&LOG_HEADER_PADDING[0..padding]);
         turso_assert_eq!(
             buffer.len() - buffer_size_start,
