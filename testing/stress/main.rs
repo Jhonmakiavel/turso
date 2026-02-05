@@ -489,9 +489,11 @@ pub fn load_schema(
 
 pub type LogLevelReloadHandle = reload::Handle<EnvFilter, tracing_subscriber::Registry>;
 
-pub fn init_tracing() -> Result<(WorkerGuard, LogLevelReloadHandle), std::io::Error> {
-    let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stderr());
-    let filter = EnvFilter::from_default_env();
+pub fn init_tracing(log_path: &str) -> Result<(WorkerGuard, LogLevelReloadHandle), std::io::Error> {
+    let log_file = std::fs::File::create(log_path)?;
+    let (non_blocking, guard) = tracing_appender::non_blocking(log_file);
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
     let (filter_layer, reload_handle) = reload::Layer::new(filter);
 
     if let Err(e) = tracing_subscriber::registry()
@@ -617,10 +619,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (_guard, reload_handle) = init_tracing()?;
-
-    spawn_log_level_watcher(reload_handle);
-
     #[cfg(feature = "antithesis")]
     let global_seed: u64 = {
         if opts.seed.is_some() {
@@ -683,6 +681,12 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
     let sql_log_file = File::create(&sql_log_path)?;
     let sql_log: SqlLog = Arc::new(std::sync::Mutex::new(BufWriter::new(sql_log_file)));
     println!("sql_log={sql_log_path}");
+
+    let tracing_log_path = format!("{db_file}.jsonl");
+    // This may cause torn writes if payloads are > 4KB, but for now let's ignore the issue.
+    let (_guard, reload_handle) = init_tracing(&tracing_log_path)?;
+    spawn_log_level_watcher(reload_handle);
+    println!("tracing_log={tracing_log_path}");
 
     let vfs_option = opts.vfs.clone();
 
