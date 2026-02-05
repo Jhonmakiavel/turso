@@ -754,7 +754,15 @@ pub fn turso_assert_greater_than(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_greater_than!(#left, #right, #msg, #details);
+                antithesis_sdk::numeric_guidance_helper!(
+                    antithesis_sdk::assert_always_or_unreachable,
+                    >,
+                    false,
+                    #left,
+                    #right,
+                    #msg,
+                    #details
+                );
             }
             assert!(#left > #right, #msg);
         }
@@ -778,7 +786,15 @@ pub fn turso_assert_greater_than_or_equal(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_greater_than_or_equal_to!(#left, #right, #msg, #details);
+                antithesis_sdk::numeric_guidance_helper!(
+                    antithesis_sdk::assert_always_or_unreachable,
+                    >=,
+                    false,
+                    #left,
+                    #right,
+                    #msg,
+                    #details
+                );
             }
             assert!(#left >= #right, #msg);
         }
@@ -802,7 +818,15 @@ pub fn turso_assert_less_than(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_less_than!(#left, #right, #msg, #details);
+                antithesis_sdk::numeric_guidance_helper!(
+                    antithesis_sdk::assert_always_or_unreachable,
+                    <,
+                    true,
+                    #left,
+                    #right,
+                    #msg,
+                    #details
+                );
             }
             assert!(#left < #right, #msg);
         }
@@ -826,7 +850,15 @@ pub fn turso_assert_less_than_or_equal(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_less_than_or_equal_to!(#left, #right, #msg, #details);
+                antithesis_sdk::numeric_guidance_helper!(
+                    antithesis_sdk::assert_always_or_unreachable,
+                    <=,
+                    true,
+                    #left,
+                    #right,
+                    #msg,
+                    #details
+                );
             }
             assert!(#left <= #right, #msg);
         }
@@ -850,7 +882,7 @@ pub fn turso_assert_eq(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always!(#left == #right, #msg, #details);
+                antithesis_sdk::assert_always_or_unreachable!(#left == #right, #msg, #details);
             }
             assert_eq!(#left, #right, #msg);
         }
@@ -874,7 +906,15 @@ pub fn turso_assert_ne(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always!(#left != #right, #msg, #details);
+                antithesis_sdk::numeric_guidance_helper!(
+                    antithesis_sdk::assert_always_or_unreachable,
+                    !=,
+                    false,
+                    #left,
+                    #right,
+                    #msg,
+                    #details
+                );
             }
             assert_ne!(#left, #right, #msg);
         }
