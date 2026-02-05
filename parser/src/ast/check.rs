@@ -1,6 +1,5 @@
 //! Check for additional syntax error
 
-use turso_macros::{turso_assert_eq, turso_assert_ne};
 use crate::ast::*;
 
 impl Cmd {
@@ -137,8 +136,8 @@ impl OneSelect {
 
                 #[cfg(debug_assertions)]
                 for row in values {
-                    turso_assert_ne!(row.len(), 0, "Values row should not be empty");
-                    turso_assert_eq!(
+                    assert_ne!(row.len(), 0, "Values row should not be empty");
+                    assert_eq!(
                         row.len(),
                         values[0].len(),
                         "All rows in VALUES should have the same length"
