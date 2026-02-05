@@ -492,7 +492,7 @@ pub type LogLevelReloadHandle = reload::Handle<EnvFilter, tracing_subscriber::Re
 pub fn init_tracing(log_path: &str) -> Result<(WorkerGuard, LogLevelReloadHandle), std::io::Error> {
     let log_file = std::fs::File::create(log_path)?;
     let (non_blocking, guard) = tracing_appender::non_blocking(log_file);
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let (filter_layer, reload_handle) = reload::Layer::new(filter);
 
     if let Err(e) = tracing_subscriber::registry()
