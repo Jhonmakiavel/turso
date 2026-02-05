@@ -4,6 +4,7 @@ import json
 
 import turso
 from antithesis.random import get_random, random_choice
+from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -67,6 +68,7 @@ try:
 
         print(f"Adding column: {alter_stmt}")
         cur.execute(alter_stmt)
+        log_sql(alter_stmt)
 
         # Update schema in init_state.db
         tbl_schema["colCount"] += 1
@@ -88,6 +90,7 @@ try:
         alter_stmt = f"ALTER TABLE tbl_{selected_tbl} RENAME TO tbl_{new_table}"
         print(f"Renaming table: {alter_stmt}")
         cur.execute(alter_stmt)
+        log_sql(alter_stmt)
 
         # Update schemas table - change the tbl identifier to match the new name
         # Extract the new table number/identifier from the new name
@@ -115,9 +118,12 @@ try:
             alter_stmt = f"ALTER TABLE tbl_{selected_tbl} RENAME COLUMN {old_col_name} TO {new_col_name}"
             print(f"Renaming column: {alter_stmt}")
             cur.execute(alter_stmt)
+            log_sql(alter_stmt)
 
             # Rename it back to maintain consistency
-            cur.execute(f"ALTER TABLE tbl_{selected_tbl} RENAME COLUMN {new_col_name} TO {old_col_name}")
+            rename_back = f"ALTER TABLE tbl_{selected_tbl} RENAME COLUMN {new_col_name} TO {old_col_name}"
+            cur.execute(rename_back)
+            log_sql(rename_back)
 
             print(f"Successfully renamed column {old_col_name} (and renamed back)")
         else:
@@ -127,14 +133,17 @@ try:
     con_init.commit()
 
 except turso.ProgrammingError as e:
+    log_sql(alter_stmt, f"ERROR(programming): {e}")
     print(f"Table/column might have been dropped in parallel: {e}")
     con.rollback()
     con_init.rollback()
 except turso.OperationalError as e:
+    log_sql(alter_stmt, f"ERROR(operational): {e}")
     print(f"Failed to alter table: {e}")
     con.rollback()
     con_init.rollback()
 except Exception as e:
+    log_sql(alter_stmt, f"ERROR: {e}")
     print(f"Unexpected error: {e}")
     con.rollback()
     con_init.rollback()

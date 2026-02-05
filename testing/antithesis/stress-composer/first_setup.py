@@ -6,6 +6,7 @@ import os
 
 import turso
 from antithesis.random import get_random, random_choice
+from sql_logger import log_sql
 
 constraints = ["NOT NULL", ""]
 data_type = ["INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC"]
@@ -77,9 +78,9 @@ for i in range(tbl_count):
     schemas.append(schema)
     cur_init.execute(f"INSERT INTO schemas (schema, tbl) VALUES ('{json.dumps(schema)}', {i})")
 
-    cur.execute(f"""
-        CREATE TABLE tbl_{i} ({cols_str})
-    """)
+    create_sql = f"CREATE TABLE tbl_{i} ({cols_str})"
+    cur.execute(create_sql)
+    log_sql(create_sql)
 
     # Create indexes for this table
     indexes_created = []
@@ -93,13 +94,17 @@ for i in range(tbl_count):
             # Choose index type based on column properties
             if col_info["data_type"] in ["INTEGER", "REAL", "NUMERIC"]:
                 idx_name = f"idx_tbl{i}_col{j}_numeric"
-                cur.execute(f"CREATE INDEX {idx_name} ON tbl_{i} ({col_name})")
+                idx_sql = f"CREATE INDEX {idx_name} ON tbl_{i} ({col_name})"
+                cur.execute(idx_sql)
+                log_sql(idx_sql)
                 indexes_created.append({"name": idx_name, "type": "single", "cols": col_name})
             elif col_info["data_type"] == "TEXT" and "NOT NULL" in col_info.get("constraint1", "") + col_info.get(
                 "constraint2", ""
             ):
                 idx_name = f"idx_tbl{i}_col{j}_text"
-                cur.execute(f"CREATE INDEX {idx_name} ON tbl_{i} ({col_name})")
+                idx_sql = f"CREATE INDEX {idx_name} ON tbl_{i} ({col_name})"
+                cur.execute(idx_sql)
+                log_sql(idx_sql)
                 indexes_created.append({"name": idx_name, "type": "single", "cols": col_name})
 
     # Create a composite index if table has multiple columns
@@ -118,7 +123,9 @@ for i in range(tbl_count):
             if len(selected_cols) >= 2:
                 col_names = [f"col_{j}" for j in selected_cols]
                 idx_name = f"idx_tbl{i}_composite"
-                cur.execute(f"CREATE INDEX {idx_name} ON tbl_{i} ({', '.join(col_names)})")
+                idx_sql = f"CREATE INDEX {idx_name} ON tbl_{i} ({', '.join(col_names)})"
+                cur.execute(idx_sql)
+                log_sql(idx_sql)
                 indexes_created.append({"name": idx_name, "type": "composite", "cols": ", ".join(col_names)})
 
     # Store index information

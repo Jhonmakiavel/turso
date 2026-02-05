@@ -3,6 +3,7 @@
 
 import turso
 from antithesis.random import get_random
+from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -31,12 +32,15 @@ except Exception as e:
 
 cur = con.cursor()
 
+drop_sql = f"DROP TABLE tbl_{selected_tbl}"
 try:
-    cur.execute(f"DROP TABLE tbl_{selected_tbl}")
+    cur.execute(drop_sql)
+    log_sql(drop_sql)
     con.commit()
     print(f"Successfully dropped table tbl_{selected_tbl}")
 except turso.ProgrammingError as e:
     # Table might have been dropped in parallel - this is expected
+    log_sql(drop_sql, f"ERROR(programming): {e}")
     print(f"Table tbl_{selected_tbl} already dropped in parallel: {e}")
     con.rollback()
 

@@ -5,6 +5,7 @@ import json
 import turso
 from antithesis.random import get_random
 from helper_utils import generate_random_value
+from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -44,15 +45,17 @@ print(f"Attempt to delete {deletions} rows in tbl_{selected_tbl}...")
 for i in range(deletions):
     where_clause = f"col_{pk} = {generate_random_value(tbl_schema[f'col_{pk}']['data_type'])}"
 
+    delete_sql = f"DELETE FROM tbl_{selected_tbl} WHERE {where_clause}"
     try:
-        cur.execute(f"""
-            DELETE FROM tbl_{selected_tbl} WHERE {where_clause}
-        """)
-    except turso.ProgrammingError:
+        cur.execute(delete_sql)
+        log_sql(delete_sql)
+    except turso.ProgrammingError as e:
         # Table/column might have been dropped in parallel - this is expected
+        log_sql(delete_sql, f"ERROR(programming): {e}")
         con.rollback()
         break
-    except turso.OperationalError:
+    except turso.OperationalError as e:
+        log_sql(delete_sql, f"ERROR(operational): {e}")
         con.rollback()
         # Re-raise other operational errors
         raise

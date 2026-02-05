@@ -3,6 +3,7 @@
 
 import turso
 from antithesis.random import get_random
+from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -46,6 +47,7 @@ try:
     drop_stmt = f"DROP INDEX {index_name}"
     print(f"Dropping index: {drop_stmt}")
     cur.execute(drop_stmt)
+    log_sql(drop_stmt)
 
     # Remove index information from init_state.db
     cur_init.execute(f"""
@@ -56,12 +58,15 @@ try:
 
     print(f"Successfully dropped index: {index_name}")
 except turso.ProgrammingError as e:
+    log_sql(drop_stmt, f"ERROR(programming): {e}")
     print(f"Index {index_name} already dropped in parallel: {e}")
     con.rollback()
 except turso.OperationalError as e:
+    log_sql(drop_stmt, f"ERROR(operational): {e}")
     print(f"Failed to drop index: {e}")
     con.rollback()
 except Exception as e:
+    log_sql(drop_stmt, f"ERROR: {e}")
     print(f"Warning: Could not remove index from metadata: {e}")
 
 con.commit()

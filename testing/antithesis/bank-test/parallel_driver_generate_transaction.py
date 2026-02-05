@@ -1,20 +1,8 @@
 #!/usr/bin/env -S python3 -u
 
-import logging
-from logging.handlers import RotatingFileHandler
-
 import turso
 from antithesis.random import get_random
-
-handler = RotatingFileHandler(
-    filename="bank_test.log", mode="a", maxBytes=1 * 1024 * 1024, backupCount=5, encoding=None, delay=0
-)
-handler.setLevel(logging.INFO)
-
-logger = logging.getLogger("root")
-logger.setLevel(logging.INFO)
-
-logger.addHandler(handler)
+from sql_logger import log_sql
 
 try:
     con = turso.connect("bank_test.db")
@@ -35,30 +23,28 @@ def transaction():
         # get a random value to transfer between accounts
         value = get_random() % 1e9
 
-        logger.info(f"Sender ID: {sender} | Recipient ID: {recipient} | Txn Val: {value}")
+        print(f"Sender ID: {sender} | Recipient ID: {recipient} | Txn Val: {value}")
 
-        cur.execute("BEGIN TRANSACTION;")
+        begin_sql = "BEGIN TRANSACTION"
+        cur.execute(begin_sql)
+        log_sql(begin_sql)
 
         # subtract value from balance of the sender account
-        cur.execute(f"""
-            UPDATE accounts
-            SET balance = balance - {value}
-            WHERE account_id = {sender};
-        """)
+        update_sender_sql = f"UPDATE accounts SET balance = balance - {value} WHERE account_id = {sender}"
+        cur.execute(update_sender_sql)
+        log_sql(update_sender_sql)
 
         # add value to balance of the recipient account
-        cur.execute(f"""
-            UPDATE accounts
-            SET balance = balance + {value}
-            WHERE account_id = {recipient};
-        """)
+        update_recipient_sql = f"UPDATE accounts SET balance = balance + {value} WHERE account_id = {recipient}"
+        cur.execute(update_recipient_sql)
+        log_sql(update_recipient_sql)
 
-        cur.execute("COMMIT;")
+        commit_sql = "COMMIT"
+        cur.execute(commit_sql)
+        log_sql(commit_sql)
 
 
 # run up to 100 transactions
 iterations = get_random() % 100
-# logger.info(f"Starting {iterations} iterations")
 for i in range(iterations):
     transaction()
-# logger.info(f"Finished {iterations} iterations")

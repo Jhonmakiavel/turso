@@ -5,6 +5,7 @@ import json
 import turso
 from antithesis.assertions import always
 from antithesis.random import get_random
+from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -36,6 +37,11 @@ cur = con.cursor()
 
 print("Running integrity check...")
 
-result = cur.execute("PRAGMA integrity_check")
+integrity_sql = "PRAGMA integrity_check"
+result = cur.execute(integrity_sql)
 row = result.fetchone()
+if row == ("ok",):
+    log_sql(integrity_sql)
+else:
+    log_sql(integrity_sql, f"ERROR: {row}")
 always(row == ("ok",), f"Integrity check failed: {row}", {})
