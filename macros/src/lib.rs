@@ -7,8 +7,8 @@ mod test;
 mod assert;
 
 use assert::{
-    comparison_auto_message, details_json, expr_to_lit_str, ComparisonAssertInput,
-    ConditionAssertInput, MessageAssertInput,
+    comparison_auto_message, details_json, expr_to_lit_str, BooleanGuidanceInput,
+    ComparisonAssertInput, ConditionAssertInput, MessageAssertInput,
 };
 use proc_macro::{token_stream::IntoIter, Group, TokenStream, TokenTree};
 use quote::quote;
@@ -628,54 +628,79 @@ pub fn turso_assert_sometimes(input: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Assert that a condition is always true when evaluated, but only when it has been evaluated
-/// at least once. Unlike `turso_assert!`, this won't fail if the code path is never reached.
+/// Assert that at least one of multiple named conditions is always true when reached.
+/// Provides boolean guidance to the Antithesis fuzzer (individual condition values).
+/// must_hit=false: OK if this code path is never reached.
+///
+/// Usage:
+/// - `turso_assert_some!({a: cond1, b: cond2}, "message")`
+/// - `turso_assert_some!({a: cond1, b: cond2}, "message", { "key": value })`
 #[proc_macro]
-pub fn turso_assert_always_some(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as ConditionAssertInput);
-    let cond = &input.condition;
-    let msg = input
-        .message
-        .clone()
-        .unwrap_or_else(|| expr_to_lit_str(cond));
+pub fn turso_assert_some(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as BooleanGuidanceInput);
+    let msg = &input.message;
     let details = details_json(&input.details);
+
+    let names: Vec<_> = input.conditions.iter().map(|c| &c.name).collect();
+    let conds: Vec<_> = input.conditions.iter().map(|c| &c.condition).collect();
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#cond, #msg, #details);
+                antithesis_sdk::boolean_guidance_helper!(
+                    antithesis_sdk::assert_always_or_unreachable,
+                    false,
+                    { #(#names: #conds),* },
+                    #msg,
+                    #details
+                );
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = #cond;
+                #( let _ = #conds; )*
             }
         }
     }
     .into()
 }
 
-/// Assert that a condition is true across all evaluations, at least once during testing.
-/// Combines "always true" with "sometimes reached".
+/// Assert that all named conditions are always true when reached.
+/// No fuzzer guidance — just a plain AND of all conditions.
+/// must_hit=false: OK if this code path is never reached.
+///
+/// Usage:
+/// - `turso_assert_all!({a: cond1, b: cond2}, "message")`
+/// - `turso_assert_all!({a: cond1, b: cond2}, "message", { "key": value })`
 #[proc_macro]
-pub fn turso_assert_sometimes_all(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as ConditionAssertInput);
-    let cond = &input.condition;
-    let msg = input
-        .message
-        .clone()
-        .unwrap_or_else(|| expr_to_lit_str(cond));
+pub fn turso_assert_all(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as BooleanGuidanceInput);
+    let msg = &input.message;
     let details = details_json(&input.details);
+
+    let conds: Vec<_> = input.conditions.iter().map(|c| &c.condition).collect();
+
+    let all_cond = if conds.is_empty() {
+        quote! { true }
+    } else {
+        let mut iter = conds.iter();
+        let first = iter.next().unwrap();
+        let mut combined = quote! { #first };
+        for c in iter {
+            combined = quote! { #combined && #c };
+        }
+        combined
+    };
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes!(#cond, #msg, #details);
+                antithesis_sdk::assert_always_or_unreachable!(#all_cond, #msg, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = #cond;
+                #( let _ = #conds; )*
             }
         }
     }

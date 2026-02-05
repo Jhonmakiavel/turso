@@ -212,3 +212,61 @@ pub fn details_json(details: &Option<TokenStream2>) -> TokenStream2 {
         None => quote! { &serde_json::json!({}) },
     }
 }
+
+/// A named condition: `field_name: condition_expr`
+pub struct NamedCondition {
+    pub name: syn::Ident,
+    pub condition: Expr,
+}
+
+/// Input for boolean guidance assertions: turso_assert_some!, turso_assert_all!
+/// Syntax:
+/// - `({field1: cond1, field2: cond2}, "message")`
+/// - `({field1: cond1, field2: cond2}, "message", { ... })`
+pub struct BooleanGuidanceInput {
+    pub conditions: Vec<NamedCondition>,
+    pub message: LitStr,
+    pub details: Option<TokenStream2>,
+}
+
+impl Parse for BooleanGuidanceInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+        braced!(content in input);
+
+        let mut conditions = Vec::new();
+        while !content.is_empty() {
+            let name: syn::Ident = content.parse()?;
+            content.parse::<Token![:]>()?;
+            let condition: Expr = content.parse()?;
+            conditions.push(NamedCondition { name, condition });
+            if !content.peek(Token![,]) {
+                break;
+            }
+            content.parse::<Token![,]>()?;
+        }
+
+        input.parse::<Token![,]>()?;
+        let message: LitStr = input.parse()?;
+
+        let details = if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.peek(syn::token::Brace) {
+                let content;
+                braced!(content in input);
+                let inner: TokenStream2 = content.parse()?;
+                Some(inner)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(BooleanGuidanceInput {
+            conditions,
+            message,
+            details,
+        })
+    }
+}
