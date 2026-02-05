@@ -1,3 +1,4 @@
+use crate::{turso_assert, turso_assert_eq};
 use branches::mark_unlikely;
 use turso_parser::ast::SortOrder;
 
@@ -20,7 +21,6 @@ use crate::{
     Result,
 };
 use crate::{io_yield_one, return_if_io, CompletionError};
-use turso_macros::{turso_assert, turso_assert_eq};
 
 #[derive(Debug, Clone, Copy)]
 enum SortState {

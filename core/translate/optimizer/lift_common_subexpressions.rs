@@ -1,3 +1,4 @@
+use crate::{turso_assert, turso_assert_greater_than};
 use turso_parser::ast::{Expr, Operator};
 
 use crate::{
@@ -5,9 +6,6 @@ use crate::{
     util::exprs_are_equivalent,
     Result,
 };
-#[allow(unused_imports)]
-use turso_macros::{turso_assert, turso_assert_greater_than};
-
 /// Lifts shared conjuncts (ANDs) from sibling OR terms.
 /// For example, given:
 /// (a AND b AND c AND d)

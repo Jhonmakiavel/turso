@@ -1,4 +1,5 @@
 #![allow(unused_variables, dead_code)]
+use crate::turso_assert;
 use crate::{LimboError, Result};
 use aegis::aegis128l::Aegis128L;
 use aegis::aegis128x2::Aegis128X2;
@@ -10,7 +11,7 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes128Gcm, Aes256Gcm, Key, Nonce,
 };
-use turso_macros::{match_ignore_ascii_case, turso_assert, AtomicEnum};
+use turso_macros::{match_ignore_ascii_case, AtomicEnum};
 
 /// Encryption Scheme
 /// We support two major algorithms: AEGIS, AES GCM. These algorithms picked so that they also do
@@ -611,7 +612,6 @@ impl EncryptionContext {
 
         #[cfg(debug_assertions)]
         {
-            use turso_macros::turso_assert;
             let reserved_bytes_zeroed = reserved_bytes.iter().all(|&b| b == 0);
             turso_assert!(
                 reserved_bytes_zeroed,
@@ -706,7 +706,6 @@ impl EncryptionContext {
 
         #[cfg(debug_assertions)]
         {
-            use turso_macros::turso_assert;
             // In debug builds, ensure that the reserved bytes are zeroed out. So even when we are
             // reusing a page from buffer pool, we zero out in debug build so that we can be
             // sure that b tree layer is not writing any data into the reserved space.

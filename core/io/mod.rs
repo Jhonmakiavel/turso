@@ -1,6 +1,7 @@
 use crate::storage::buffer_pool::ArenaBuffer;
 use crate::storage::sqlite3_ondisk::WAL_FRAME_HEADER_SIZE;
 use crate::sync::Arc;
+use crate::turso_assert;
 use crate::{BufferPool, Result};
 use bitflags::bitflags;
 use cfg_block::cfg_block;
@@ -9,7 +10,6 @@ use std::cell::RefCell;
 use std::fmt;
 use std::ptr::NonNull;
 use std::{fmt::Debug, pin::Pin};
-use turso_macros::turso_assert;
 use turso_macros::AtomicEnum;
 
 cfg_block! {

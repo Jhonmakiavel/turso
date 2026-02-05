@@ -12,11 +12,10 @@ use crate::{
     vdbe::affinity::Affinity,
     Result,
 };
+use crate::{turso_assert, turso_debug_assert};
 use rustc_hash::FxHashMap as HashMap;
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 use turso_ext::{ConstraintInfo, ConstraintOp};
-#[allow(unused_imports)]
-use turso_macros::{turso_assert, turso_debug_assert};
 use turso_parser::ast::{self, SortOrder, TableInternalId};
 
 use super::cost_params::CostModelParams;

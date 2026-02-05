@@ -1,3 +1,4 @@
+use crate::{turso_debug_assert, turso_soft_unreachable};
 use branches::{mark_unlikely, unlikely};
 use either::Either;
 #[cfg(feature = "serde")]
@@ -25,8 +26,6 @@ use std::fmt::{Debug, Display};
 use std::iter::{FusedIterator, Peekable};
 use std::ops::Deref;
 use std::task::Waker;
-#[allow(unused_imports)]
-use turso_macros::{turso_debug_assert, turso_soft_unreachable};
 
 /// SQLite by default uses 2000 as maximum numbers in a row.
 /// It controlld by the constant called SQLITE_MAX_COLUMN

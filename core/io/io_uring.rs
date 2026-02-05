@@ -5,7 +5,6 @@ use crate::io::clock::{Clock, DefaultClock, MonotonicInstant, WallClockInstant};
 use crate::storage::wal::CKPT_BATCH_PAGES;
 use crate::sync::Mutex;
 use crate::{CompletionError, LimboError, Result};
-use turso_macros::turso_assert;
 use rustix::fs::{self, FlockOperation, OFlags};
 use std::ptr::NonNull;
 use std::{

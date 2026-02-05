@@ -13,7 +13,7 @@ use assert::{
 use proc_macro::{token_stream::IntoIter, Group, TokenStream, TokenTree};
 use quote::quote;
 use std::collections::HashMap;
-use syn::parse_macro_input;
+use syn::{parse_macro_input, LitStr};
 
 /// A procedural macro that derives a `Description` trait for enums.
 /// This macro extracts documentation comments (specified with `/// Description...`) for enum variants
@@ -544,12 +544,14 @@ pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `turso_assert!(condition, "message", { "key": value })`
 #[proc_macro]
 pub fn turso_assert(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ConditionAssertInput);
     let cond = &input.condition;
     let msg = input
         .message
         .clone()
         .unwrap_or_else(|| expr_to_lit_str(cond));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     let assert_call = if let Some(fmt_args) = &input.format_args {
@@ -562,7 +564,7 @@ pub fn turso_assert(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#cond, #msg, #details);
+                antithesis_sdk::assert_always_or_unreachable!(#cond, #prefixed, #details);
             }
             #assert_call
         }
@@ -575,12 +577,14 @@ pub fn turso_assert(input: TokenStream) -> TokenStream {
 /// Unlike turso_assert!, this only panics in debug builds.
 #[proc_macro]
 pub fn turso_debug_assert(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ConditionAssertInput);
     let cond = &input.condition;
     let msg = input
         .message
         .clone()
         .unwrap_or_else(|| expr_to_lit_str(cond));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     let assert_call = if let Some(fmt_args) = &input.format_args {
@@ -593,7 +597,7 @@ pub fn turso_debug_assert(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#cond, #msg, #details);
+                antithesis_sdk::assert_always_or_unreachable!(#cond, #prefixed, #details);
             }
             #assert_call
         }
@@ -605,19 +609,21 @@ pub fn turso_debug_assert(input: TokenStream) -> TokenStream {
 /// This helps Antithesis identify rare conditions that should be triggered.
 #[proc_macro]
 pub fn turso_assert_sometimes(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ConditionAssertInput);
     let cond = &input.condition;
     let msg = input
         .message
         .clone()
         .unwrap_or_else(|| expr_to_lit_str(cond));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes!(#cond, #msg, #details);
+                antithesis_sdk::assert_sometimes!(#cond, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
@@ -637,8 +643,9 @@ pub fn turso_assert_sometimes(input: TokenStream) -> TokenStream {
 /// - `turso_assert_some!({a: cond1, b: cond2}, "message", { "key": value })`
 #[proc_macro]
 pub fn turso_assert_some(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as BooleanGuidanceInput);
-    let msg = &input.message;
+    let prefixed = prefix_message(&file_path, &input.message);
     let details = details_json(&input.details);
 
     let names: Vec<_> = input.conditions.iter().map(|c| &c.name).collect();
@@ -652,7 +659,7 @@ pub fn turso_assert_some(input: TokenStream) -> TokenStream {
                     antithesis_sdk::assert_always_or_unreachable,
                     false,
                     { #(#names: #conds),* },
-                    #msg,
+                    #prefixed,
                     #details
                 );
             }
@@ -674,8 +681,9 @@ pub fn turso_assert_some(input: TokenStream) -> TokenStream {
 /// - `turso_assert_all!({a: cond1, b: cond2}, "message", { "key": value })`
 #[proc_macro]
 pub fn turso_assert_all(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as BooleanGuidanceInput);
-    let msg = &input.message;
+    let prefixed = prefix_message(&file_path, &input.message);
     let details = details_json(&input.details);
 
     let conds: Vec<_> = input.conditions.iter().map(|c| &c.condition).collect();
@@ -696,7 +704,7 @@ pub fn turso_assert_all(input: TokenStream) -> TokenStream {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#all_cond, #msg, #details);
+                antithesis_sdk::assert_always_or_unreachable!(#all_cond, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
@@ -710,15 +718,16 @@ pub fn turso_assert_all(input: TokenStream) -> TokenStream {
 /// Assert that a code path is reached at least once during testing.
 #[proc_macro]
 pub fn turso_assert_reachable(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as MessageAssertInput);
-    let msg = &input.message;
+    let prefixed = prefix_message(&file_path, &input.message);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_reachable!(#msg, #details);
+                antithesis_sdk::assert_reachable!(#prefixed, #details);
             }
         }
     }
@@ -728,17 +737,19 @@ pub fn turso_assert_reachable(input: TokenStream) -> TokenStream {
 /// Assert that a code path is never reached during testing.
 #[proc_macro]
 pub fn turso_assert_unreachable(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as MessageAssertInput);
     let msg = &input.message;
+    let prefixed = prefix_message(&file_path, msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_unreachable!(#msg, #details);
+                antithesis_sdk::assert_unreachable!(#prefixed, #details);
             }
-            unreachable!(#msg)
+            unreachable!("{}", #msg)
         }
     }
     .into()
@@ -748,15 +759,16 @@ pub fn turso_assert_unreachable(input: TokenStream) -> TokenStream {
 /// never be reached, but does NOT panic. Without the antithesis feature this is a no-op.
 #[proc_macro]
 pub fn turso_soft_unreachable(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as MessageAssertInput);
-    let msg = &input.message;
+    let prefixed = prefix_message(&file_path, &input.message);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_unreachable!(#msg, #details);
+                antithesis_sdk::assert_unreachable!(#prefixed, #details);
             }
         }
     }
@@ -766,6 +778,7 @@ pub fn turso_soft_unreachable(input: TokenStream) -> TokenStream {
 /// Assert that left > right with more visibility for Antithesis.
 #[proc_macro]
 pub fn turso_assert_greater_than(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -773,6 +786,7 @@ pub fn turso_assert_greater_than(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, ">"));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
@@ -785,11 +799,11 @@ pub fn turso_assert_greater_than(input: TokenStream) -> TokenStream {
                     false,
                     #left,
                     #right,
-                    #msg,
+                    #prefixed,
                     #details
                 );
             }
-            assert!(#left > #right, #msg);
+            assert!(#left > #right, "{}", #msg);
         }
     }
     .into()
@@ -798,6 +812,7 @@ pub fn turso_assert_greater_than(input: TokenStream) -> TokenStream {
 /// Assert that left >= right with more visibility for Antithesis.
 #[proc_macro]
 pub fn turso_assert_greater_than_or_equal(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -805,6 +820,7 @@ pub fn turso_assert_greater_than_or_equal(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, ">="));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
@@ -817,11 +833,11 @@ pub fn turso_assert_greater_than_or_equal(input: TokenStream) -> TokenStream {
                     false,
                     #left,
                     #right,
-                    #msg,
+                    #prefixed,
                     #details
                 );
             }
-            assert!(#left >= #right, #msg);
+            assert!(#left >= #right, "{}", #msg);
         }
     }
     .into()
@@ -830,6 +846,7 @@ pub fn turso_assert_greater_than_or_equal(input: TokenStream) -> TokenStream {
 /// Assert that left < right with more visibility for Antithesis.
 #[proc_macro]
 pub fn turso_assert_less_than(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -837,6 +854,7 @@ pub fn turso_assert_less_than(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, "<"));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
@@ -849,11 +867,11 @@ pub fn turso_assert_less_than(input: TokenStream) -> TokenStream {
                     true,
                     #left,
                     #right,
-                    #msg,
+                    #prefixed,
                     #details
                 );
             }
-            assert!(#left < #right, #msg);
+            assert!(#left < #right, "{}", #msg);
         }
     }
     .into()
@@ -862,6 +880,7 @@ pub fn turso_assert_less_than(input: TokenStream) -> TokenStream {
 /// Assert that left <= right with more visibility for Antithesis.
 #[proc_macro]
 pub fn turso_assert_less_than_or_equal(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -869,6 +888,7 @@ pub fn turso_assert_less_than_or_equal(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, "<="));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
@@ -881,11 +901,11 @@ pub fn turso_assert_less_than_or_equal(input: TokenStream) -> TokenStream {
                     true,
                     #left,
                     #right,
-                    #msg,
+                    #prefixed,
                     #details
                 );
             }
-            assert!(#left <= #right, #msg);
+            assert!(#left <= #right, "{}", #msg);
         }
     }
     .into()
@@ -894,6 +914,7 @@ pub fn turso_assert_less_than_or_equal(input: TokenStream) -> TokenStream {
 /// Assert that left == right with more visibility for Antithesis.
 #[proc_macro]
 pub fn turso_assert_eq(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -901,15 +922,16 @@ pub fn turso_assert_eq(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, "=="));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#left == #right, #msg, #details);
+                antithesis_sdk::assert_always_or_unreachable!(#left == #right, #prefixed, #details);
             }
-            assert_eq!(#left, #right, #msg);
+            assert_eq!(#left, #right, "{}", #msg);
         }
     }
     .into()
@@ -918,6 +940,7 @@ pub fn turso_assert_eq(input: TokenStream) -> TokenStream {
 /// Assert that left != right with more visibility for Antithesis.
 #[proc_macro]
 pub fn turso_assert_ne(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -925,6 +948,7 @@ pub fn turso_assert_ne(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, "!="));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
@@ -937,11 +961,11 @@ pub fn turso_assert_ne(input: TokenStream) -> TokenStream {
                     false,
                     #left,
                     #right,
-                    #msg,
+                    #prefixed,
                     #details
                 );
             }
-            assert_ne!(#left, #right, #msg);
+            assert_ne!(#left, #right, "{}", #msg);
         }
     }
     .into()
@@ -950,6 +974,7 @@ pub fn turso_assert_ne(input: TokenStream) -> TokenStream {
 /// Assert that left > right at least once during testing.
 #[proc_macro]
 pub fn turso_assert_sometimes_greater_than(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -957,13 +982,14 @@ pub fn turso_assert_sometimes_greater_than(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, ">"));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_greater_than!(#left, #right, #msg, #details);
+                antithesis_sdk::assert_sometimes_greater_than!(#left, #right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
@@ -977,6 +1003,7 @@ pub fn turso_assert_sometimes_greater_than(input: TokenStream) -> TokenStream {
 /// Assert that left < right at least once during testing.
 #[proc_macro]
 pub fn turso_assert_sometimes_less_than(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -984,13 +1011,14 @@ pub fn turso_assert_sometimes_less_than(input: TokenStream) -> TokenStream {
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, "<"));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_less_than!(#left, #right, #msg, #details);
+                antithesis_sdk::assert_sometimes_less_than!(#left, #right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
@@ -1004,6 +1032,7 @@ pub fn turso_assert_sometimes_less_than(input: TokenStream) -> TokenStream {
 /// Assert that left >= right at least once during testing.
 #[proc_macro]
 pub fn turso_assert_sometimes_greater_than_or_equal(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -1011,13 +1040,14 @@ pub fn turso_assert_sometimes_greater_than_or_equal(input: TokenStream) -> Token
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, ">="));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_greater_than_or_equal_to!(#left, #right, #msg, #details);
+                antithesis_sdk::assert_sometimes_greater_than_or_equal_to!(#left, #right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
@@ -1031,6 +1061,7 @@ pub fn turso_assert_sometimes_greater_than_or_equal(input: TokenStream) -> Token
 /// Assert that left <= right at least once during testing.
 #[proc_macro]
 pub fn turso_assert_sometimes_less_than_or_equal(input: TokenStream) -> TokenStream {
+    let file_path = get_caller_file(&input);
     let input = parse_macro_input!(input as ComparisonAssertInput);
     let left = &input.left;
     let right = &input.right;
@@ -1038,13 +1069,14 @@ pub fn turso_assert_sometimes_less_than_or_equal(input: TokenStream) -> TokenStr
         .message
         .clone()
         .unwrap_or_else(|| comparison_auto_message(left, right, "<="));
+    let prefixed = prefix_message(&file_path, &msg);
     let details = details_json(&input.details);
 
     quote! {
         {
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_less_than_or_equal_to!(#left, #right, #msg, #details);
+                antithesis_sdk::assert_sometimes_less_than_or_equal_to!(#left, #right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
@@ -1053,4 +1085,21 @@ pub fn turso_assert_sometimes_less_than_or_equal(input: TokenStream) -> TokenStr
         }
     }
     .into()
+}
+
+/// Extract the caller's file path from the input token stream using span information.
+/// Uses `proc_macro::Span::start().file()` which is stable on Rust 1.88+.
+fn get_caller_file(input: &TokenStream) -> String {
+    let mut iter = input.clone().into_iter();
+    if let Some(first_token) = iter.next() {
+        first_token.span().start().file()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Prefix a message literal with `[file_path] `. Returns a real `LitStr` token
+/// compatible with Antithesis SDK's `$message:literal`.
+fn prefix_message(file_path: &str, msg: &LitStr) -> LitStr {
+    LitStr::new(&format!("[{}] {}", file_path, msg.value()), msg.span())
 }

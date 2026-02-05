@@ -12,13 +12,13 @@ use crate::sync::atomic::Ordering;
 use crate::sync::Arc;
 use crate::sync::RwLock;
 use crate::types::{IOCompletions, IOResult, ImmutableRecord};
+use crate::{turso_assert, turso_assert_eq};
 use crate::{
     CheckpointResult, Completion, Connection, IOExt, LimboError, Pager, Result, SyncMode,
     TransactionState, Value, ValueRef,
 };
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::num::NonZeroU64;
-use turso_macros::{turso_assert, turso_assert_eq};
 
 #[derive(Debug)]
 pub enum CheckpointState {

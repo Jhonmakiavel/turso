@@ -1,3 +1,4 @@
+use crate::{turso_assert, turso_assert_eq, turso_debug_assert};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use tracing::{instrument, Level};
 use turso_parser::ast::{self, ResolveType, SortOrder, TableInternalId};
@@ -14,7 +15,6 @@ use crate::{
     },
     Arc, CaptureDataChangesMode, Connection, Value, VirtualTable,
 };
-use turso_macros::{turso_assert, turso_assert_eq, turso_debug_assert};
 
 // Keep distinct hash-table ids far from table internal ids to avoid collisions.
 const HASH_TABLE_ID_BASE: usize = 1 << 30;

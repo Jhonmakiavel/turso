@@ -1,5 +1,5 @@
+use crate::turso_debug_assert;
 use crate::{LimboError, Result};
-use turso_macros::turso_debug_assert;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum VectorType {

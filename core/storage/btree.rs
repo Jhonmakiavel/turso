@@ -1,10 +1,3 @@
-use branches::mark_unlikely;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use smallvec::SmallVec;
-use tracing::{instrument, Level};
-use turso_macros::turso_assert_ne;
-use turso_macros::turso_soft_unreachable;
-
 use crate::{
     io::CompletionGroup,
     io_yield_one,
@@ -32,24 +25,28 @@ use crate::{
     vdbe::Register,
     Completion, MvStore,
 };
-
 use crate::{
-    return_corrupt, return_if_io,
-    types::{
-        compare_immutable, AsValueRef, IOResult, ImmutableRecord, SeekKey, SeekOp, Value, ValueRef,
-    },
-    LimboError, Result,
-};
-use turso_macros::{
     turso_assert_eq, turso_assert_greater_than, turso_assert_greater_than_or_equal,
-    turso_assert_less_than, turso_assert_less_than_or_equal,
+    turso_assert_less_than, turso_assert_less_than_or_equal, turso_assert_ne,
+    turso_soft_unreachable,
 };
+use branches::mark_unlikely;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use smallvec::SmallVec;
+use tracing::{instrument, Level};
 
 use super::{
     pager::PageRef,
     sqlite3_ondisk::{
         write_varint_to_vec, IndexInteriorCell, IndexLeafCell, OverflowCell, MINIMUM_CELL_SIZE,
     },
+};
+use crate::{
+    return_corrupt, return_if_io,
+    types::{
+        compare_immutable, AsValueRef, IOResult, ImmutableRecord, SeekKey, SeekOp, Value, ValueRef,
+    },
+    LimboError, Result,
 };
 use std::{
     any::Any,

@@ -1,3 +1,4 @@
+use crate::turso_assert;
 use crate::{
     function::MathFunc,
     numeric::{format_float, NullableInteger, Numeric},
@@ -6,7 +7,6 @@ use crate::{
     vdbe::affinity::Affinity,
     LimboError, Result, Value, ValueRef,
 };
-use turso_macros::turso_assert;
 
 // we use math functions from Rust stdlib in order to be as portable as possible for the production version of the tursodb
 #[cfg(not(test))]

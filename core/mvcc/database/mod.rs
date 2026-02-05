@@ -29,6 +29,10 @@ use crate::IOExt;
 use crate::LimboError;
 use crate::Result;
 use crate::ValueRef;
+use crate::{
+    turso_assert, turso_assert_eq, turso_assert_less_than, turso_assert_reachable,
+    turso_soft_unreachable,
+};
 use crate::{Connection, Pager, SyncMode};
 use crossbeam_skiplist::map::Entry;
 use crossbeam_skiplist::{SkipMap, SkipSet};
@@ -38,10 +42,6 @@ use std::marker::PhantomData;
 use std::ops::Bound;
 use tracing::instrument;
 use tracing::Level;
-use turso_macros::{
-    turso_assert, turso_assert_eq, turso_assert_less_than, turso_assert_reachable,
-    turso_soft_unreachable,
-};
 
 pub mod checkpoint_state_machine;
 pub use checkpoint_state_machine::{CheckpointState, CheckpointStateMachine};
@@ -2228,10 +2228,7 @@ impl<Clock: LogicalClock> MvStore<Clock> {
         let header = self.get_new_transaction_database_header(&pager);
         let tx = Transaction::new(tx_id, begin_ts, header);
         tracing::trace!("begin_load_tx(tx_id={tx_id})");
-        turso_assert!(
-            !self.txs.contains_key(&tx_id),
-            "begin_load_tx called twice"
-        );
+        turso_assert!(!self.txs.contains_key(&tx_id), "begin_load_tx called twice");
         self.txs.insert(tx_id, tx);
 
         // disable trying to commit pager transaction automatically; during the "load tx" (bootstrap of MVCC) we
@@ -2995,7 +2992,9 @@ impl<Clock: LogicalClock> MvStore<Clock> {
                         let val = match record.get_value_opt(3) {
                             Some(v) => v,
                             None => {
-                                turso_soft_unreachable!("Expected at least 4 columns in sqlite_schema");
+                                turso_soft_unreachable!(
+                                    "Expected at least 4 columns in sqlite_schema"
+                                );
                                 return Err(LimboError::InternalError(
                                     "Expected at least 4 columns in sqlite_schema".to_string(),
                                 ));

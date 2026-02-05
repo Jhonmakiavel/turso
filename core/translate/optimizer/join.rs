@@ -1,9 +1,17 @@
+use crate::{turso_assert_eq, turso_assert_greater_than};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use smallvec::SmallVec;
 
 use turso_parser::ast::{Expr, Operator, TableInternalId};
 
+use super::{
+    access_method::{find_best_access_method_for_join_order, AccessMethod},
+    constraints::TableConstraints,
+    cost_params::CostModelParams,
+    order::OrderTarget,
+    IndexMethodCandidate,
+};
 use crate::{
     stats::AnalyzeStats,
     translate::{
@@ -19,16 +27,6 @@ use crate::{
         planner::TableMask,
     },
     LimboError, Result,
-};
-#[allow(unused_imports)]
-use turso_macros::{turso_assert, turso_assert_eq, turso_assert_greater_than};
-
-use super::{
-    access_method::{find_best_access_method_for_join_order, AccessMethod},
-    constraints::TableConstraints,
-    cost_params::CostModelParams,
-    order::OrderTarget,
-    IndexMethodCandidate,
 };
 
 // Upper bound on rowids to materialize for a hash build input.

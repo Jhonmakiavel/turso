@@ -1,5 +1,6 @@
 use crate::sync::Arc;
 use crate::translate::optimizer::constraints::ConstraintOperator;
+use crate::turso_assert;
 
 use tracing::{instrument, Level};
 use turso_parser::ast::{self, Expr, SubqueryType, UnaryOperator};
@@ -29,7 +30,6 @@ use crate::vdbe::{
     BranchOffset,
 };
 use crate::{Result, Value};
-use turso_macros::turso_assert;
 
 use super::collate::CollationSeq;
 

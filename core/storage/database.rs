@@ -4,11 +4,11 @@ use crate::storage::checksum::ChecksumContext;
 use crate::storage::encryption::EncryptionContext;
 use crate::sync::Arc;
 use crate::{io::Completion, Buffer, CompletionError, Result};
-use tracing::{instrument, Level};
-use turso_macros::{
+use crate::{
     turso_assert, turso_assert_eq, turso_assert_greater_than, turso_assert_greater_than_or_equal,
     turso_assert_less_than_or_equal,
 };
+use tracing::{instrument, Level};
 
 #[derive(Debug, Clone)]
 pub enum EncryptionOrChecksum {

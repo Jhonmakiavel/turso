@@ -28,6 +28,7 @@ use crate::{
     },
     LimboError, Result,
 };
+use crate::{turso_assert, turso_assert_eq, turso_debug_assert, turso_soft_unreachable};
 use constraints::{
     constraints_from_where_clause, usable_constraints_for_join_order, Constraint, ConstraintRef,
 };
@@ -38,7 +39,6 @@ use order::{compute_order_target, plan_satisfies_order_target, EliminatesSortBy}
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 use turso_ext::{ConstraintInfo, ConstraintUsage};
-use turso_macros::{turso_assert, turso_assert_eq, turso_debug_assert, turso_soft_unreachable};
 use turso_parser::ast::{self, Expr, SortOrder, TriggerEvent};
 
 use super::{

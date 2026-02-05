@@ -1,4 +1,5 @@
 use crate::sync::Arc;
+use crate::{turso_assert, turso_assert_greater_than_or_equal, turso_assert_less_than};
 use std::cmp::PartialEq;
 
 use super::{
@@ -31,7 +32,6 @@ use crate::{
     vdbe::builder::ProgramBuilder,
 };
 use smallvec::SmallVec;
-use turso_macros::{turso_assert, turso_assert_greater_than_or_equal, turso_assert_less_than};
 use turso_parser::ast::Literal::Null;
 use turso_parser::ast::{
     self, As, Expr, FromClause, JoinType, Materialized, Over, QualifiedName, Select,

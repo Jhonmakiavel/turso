@@ -10,9 +10,9 @@ use crate::{
     types::{ImmutableRecord, IndexInfo},
     Buffer, Completion, CompletionError, LimboError, Result,
 };
+use crate::{turso_assert, turso_assert_eq, turso_assert_less_than, turso_debug_assert};
 
 use crate::File;
-use turso_macros::{turso_assert, turso_assert_eq, turso_assert_less_than, turso_debug_assert};
 
 /// Logical log size in bytes at which a committing transaction will trigger a checkpoint.
 /// Default to the size of 1000 SQLite WAL frames; disable by setting a negative value.

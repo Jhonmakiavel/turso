@@ -2,6 +2,7 @@ use super::{Buffer, Clock, Completion, File, OpenFlags, IO};
 use crate::io::clock::{DefaultClock, MonotonicInstant, WallClockInstant};
 use crate::io::FileSyncType;
 use crate::sync::Mutex;
+use crate::turso_assert;
 use crate::Result;
 use std::{
     cell::{Cell, UnsafeCell},
@@ -9,7 +10,6 @@ use std::{
     sync::Arc,
 };
 use tracing::debug;
-use turso_macros::turso_assert;
 
 pub struct MemoryIO {
     files: Arc<Mutex<HashMap<String, Arc<MemoryFile>>>>,

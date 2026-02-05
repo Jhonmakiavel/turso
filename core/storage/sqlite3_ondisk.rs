@@ -43,6 +43,7 @@
 
 #![allow(clippy::arc_with_non_send_sync)]
 
+use crate::{turso_assert, turso_assert_eq, turso_assert_greater_than};
 use bytemuck::{Pod, Zeroable};
 use pack1::{I32BE, U16BE, U32BE};
 use tracing::{instrument, Level};
@@ -66,7 +67,6 @@ use crate::{bail_corrupt_error, CompletionError, File, IOContext, Result, WalFil
 use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 use std::pin::Pin;
-use turso_macros::{turso_assert, turso_assert_eq, turso_assert_greater_than};
 
 /// The minimum size of a cell in bytes.
 pub const MINIMUM_CELL_SIZE: usize = 4;

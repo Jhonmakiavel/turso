@@ -1,10 +1,10 @@
+use crate::turso_assert;
 use turso_parser::ast::Name;
 
 use crate::{
     vdbe::{builder::ProgramBuilder, insn::Insn},
     Result,
 };
-use turso_macros::turso_assert;
 
 pub fn translate_rollback(
     mut program: ProgramBuilder,

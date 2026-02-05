@@ -1,4 +1,5 @@
 use crate::sync::RwLock;
+use crate::turso_assert;
 use crossbeam_skiplist::map::Entry;
 use crossbeam_skiplist::SkipMap;
 
@@ -19,7 +20,6 @@ use crate::{return_if_io, Completion, LimboError, Pager, Result};
 use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Bound;
-use turso_macros::turso_assert;
 
 #[derive(Debug, Clone)]
 enum CursorPosition {

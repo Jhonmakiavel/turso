@@ -11,6 +11,9 @@ repository.workspace = true
 description = "The Limbo deterministic simulator"
 publish = false
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "limbo_sim"
 path = "main.rs"

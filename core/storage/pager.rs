@@ -28,14 +28,14 @@ use crate::{
     LimboError, Result, TransactionState,
 };
 use crate::{io_yield_one, Buffer, CompletionError, IOContext, OpenFlags, SyncMode, IO};
+use crate::{
+    turso_assert, turso_assert_eq, turso_assert_greater_than, turso_assert_greater_than_or_equal,
+    turso_assert_less_than, turso_assert_ne, turso_debug_assert, turso_soft_unreachable,
+};
 use arc_swap::ArcSwapOption;
 use roaring::RoaringBitmap;
 use std::cell::UnsafeCell;
 use tracing::{instrument, trace, Level};
-use turso_macros::{
-    turso_assert, turso_assert_eq, turso_assert_greater_than, turso_assert_greater_than_or_equal,
-    turso_assert_less_than, turso_assert_ne, turso_debug_assert, turso_soft_unreachable,
-};
 
 use super::btree::offset::{
     BTREE_CELL_CONTENT_AREA, BTREE_CELL_COUNT, BTREE_FIRST_FREEBLOCK, BTREE_FRAGMENTED_BYTES_COUNT,
@@ -4594,7 +4594,7 @@ impl CreateBTreeFlags {
 pub(crate) mod ptrmap {
     #[allow(unused_imports)]
     use crate::{storage::sqlite3_ondisk::PageSize, LimboError, Result};
-    use turso_macros::{turso_assert_greater_than_or_equal, turso_soft_unreachable};
+    use crate::{turso_assert_greater_than_or_equal, turso_soft_unreachable};
 
     // Constants
     pub const PTRMAP_ENTRY_SIZE: usize = 5;

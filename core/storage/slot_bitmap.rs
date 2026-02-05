@@ -1,5 +1,4 @@
-use turso_macros::turso_assert;
-
+use crate::turso_assert;
 #[derive(Debug)]
 /// Fixed-size bitmap for tracking allocated slots in an arena.
 ///

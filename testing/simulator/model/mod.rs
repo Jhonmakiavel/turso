@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 use anyhow::Context;
-use turso_macros::turso_assert_eq;
 use bitflags::bitflags;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
@@ -17,6 +16,7 @@ use sql_generation::model::{
     },
     table::{Index, JoinTable, JoinType, SimValue, Table, TableContext},
 };
+use turso_core::turso_assert_eq;
 use turso_parser::ast::Distinctness;
 
 use crate::runner::env::TransactionMode;

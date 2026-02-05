@@ -11,11 +11,12 @@ use crate::{
     types::{IOCompletions, IOResult, Value, ValueRef},
     CompletionError, Result,
 };
+use crate::{turso_assert, turso_assert_eq};
 use rapidhash::fast::RapidHasher;
 use std::cmp::{Eq, Ordering};
 use std::hash::Hasher;
 use std::{cell::RefCell, collections::VecDeque};
-use turso_macros::{turso_assert, turso_assert_eq, AtomicEnum};
+use turso_macros::AtomicEnum;
 
 const DEFAULT_SEED: u64 = 1337;
 

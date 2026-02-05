@@ -3,14 +3,13 @@
 use crate::io::FileSyncType;
 use crate::sync::Mutex;
 use crate::sync::OnceLock;
+use crate::{turso_assert, turso_assert_greater_than, turso_debug_assert, turso_soft_unreachable};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::array;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use strum::EnumString;
 use tracing::{instrument, Level};
-#[allow(unused_imports)]
-use turso_macros::{turso_assert_greater_than, turso_debug_assert, turso_soft_unreachable};
 
 use crate::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use crate::sync::RwLock;
@@ -34,7 +33,6 @@ use crate::{
     bail_corrupt_error, io_yield_one, Buffer, Completion, CompletionError, IOContext, LimboError,
     Result,
 };
-use turso_macros::turso_assert;
 
 /// this contains the frame to rollback to and its associated checksum.
 #[derive(Debug, Clone)]

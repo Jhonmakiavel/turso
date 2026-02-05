@@ -1,3 +1,4 @@
+use crate::turso_assert_eq;
 use std::{
     borrow::Cow,
     num::NonZero,
@@ -7,7 +8,6 @@ use std::{
 };
 
 use tracing::{instrument, Level};
-use turso_macros::turso_assert_eq;
 use turso_parser::{
     ast::{fmt::ToTokens, Cmd},
     parser::Parser,

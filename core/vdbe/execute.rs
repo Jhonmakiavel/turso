@@ -52,6 +52,10 @@ use crate::{
     translate::emitter::TransactionMode,
 };
 use crate::{get_cursor, CheckpointMode, Completion, Connection, DatabaseStorage, IOExt, MvCursor};
+use crate::{
+    turso_assert, turso_assert_eq, turso_assert_greater_than_or_equal, turso_assert_less_than,
+    turso_assert_reachable, turso_soft_unreachable,
+};
 use either::Either;
 use smallvec::SmallVec;
 use std::any::Any;
@@ -65,8 +69,6 @@ use std::{
 use turso_macros::match_ignore_ascii_case;
 
 use crate::pseudo::PseudoCursor;
-use turso_macros::turso_assert_reachable;
-use turso_macros::turso_soft_unreachable;
 
 use crate::storage::btree::{BTreeCursor, BTreeKey};
 
@@ -81,9 +83,6 @@ use crate::{
 };
 
 use crate::{connection::Row, info, OpenFlags, TransactionState, ValueRef};
-use turso_macros::{
-    turso_assert, turso_assert_eq, turso_assert_greater_than_or_equal, turso_assert_less_than,
-};
 
 use super::{
     insn::{Cookie, RegisterOrLiteral},
@@ -3253,11 +3252,7 @@ pub fn seek_internal(
                     else {
                         unreachable!("op_seek: record_source should be Unpacked for table-btree");
                     };
-                    turso_assert_eq!(
-                        num_regs,
-                        1,
-                        "op_seek: num_regs should be 1 for table-btree"
-                    );
+                    turso_assert_eq!(num_regs, 1, "op_seek: num_regs should be 1 for table-btree");
                     let original_value = state.registers[start_reg].get_value();
                     let mut temp_value = original_value.clone();
 

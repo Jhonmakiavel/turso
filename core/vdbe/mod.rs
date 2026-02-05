@@ -17,6 +17,7 @@
 //!
 //! https://www.sqlite.org/opcode.html
 
+use crate::{turso_assert, turso_assert_eq, turso_assert_ne, turso_debug_assert};
 pub mod affinity;
 pub mod bloom_filter;
 pub mod builder;
@@ -90,7 +91,6 @@ use std::{
     task::Waker,
 };
 use tracing::{instrument, Level};
-use turso_macros::{turso_assert, turso_assert_eq, turso_assert_ne, turso_debug_assert};
 
 /// State machine for committing view deltas with I/O handling
 #[derive(Debug, Clone)]

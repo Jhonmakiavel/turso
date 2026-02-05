@@ -109,10 +109,26 @@ pub use storage::{
     wal::{CheckpointMode, CheckpointResult, Wal, WalFile, WalFileShared},
 };
 use tracing::{instrument, Level};
-use turso_macros::{
-    match_ignore_ascii_case, turso_assert, turso_assert_eq, turso_assert_greater_than_or_equal,
-    AtomicEnum,
-};
+use turso_macros::{match_ignore_ascii_case, AtomicEnum};
+
+pub use turso_macros::turso_assert;
+pub use turso_macros::turso_assert_all;
+pub use turso_macros::turso_assert_eq;
+pub use turso_macros::turso_assert_greater_than;
+pub use turso_macros::turso_assert_greater_than_or_equal;
+pub use turso_macros::turso_assert_less_than;
+pub use turso_macros::turso_assert_less_than_or_equal;
+pub use turso_macros::turso_assert_ne;
+pub use turso_macros::turso_assert_reachable;
+pub use turso_macros::turso_assert_some;
+pub use turso_macros::turso_assert_sometimes;
+pub use turso_macros::turso_assert_sometimes_greater_than;
+pub use turso_macros::turso_assert_sometimes_greater_than_or_equal;
+pub use turso_macros::turso_assert_sometimes_less_than;
+pub use turso_macros::turso_assert_sometimes_less_than_or_equal;
+pub use turso_macros::turso_assert_unreachable;
+pub use turso_macros::turso_debug_assert;
+pub use turso_macros::turso_soft_unreachable;
 use turso_parser::{ast, ast::Cmd, parser::Parser};
 pub use types::IOResult;
 pub use types::Value;
@@ -943,7 +959,7 @@ impl Database {
         let is_readonly = self.open_flags.contains(OpenFlags::ReadOnly);
 
         let mut pager = self._init(encryption_key)?;
-        turso_assert!(pager.wal.is_none(),"Pager should have no WAL yet");
+        turso_assert!(pager.wal.is_none(), "Pager should have no WAL yet");
 
         let is_autovacuumed_db = self.io.block(|| {
             pager.with_header(|header| {

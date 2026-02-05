@@ -1,4 +1,6 @@
 use crate::sync::Arc;
+use crate::turso_assert;
+use crate::turso_debug_assert;
 use crate::{
     index_method::{
         parse_patterns, IndexMethod, IndexMethodAttachment, IndexMethodConfiguration,
@@ -34,7 +36,6 @@ use tantivy::{
     },
     DocAddress, HasLen, Index, IndexReader, IndexSettings, IndexWriter, Searcher, TantivyDocument,
 };
-use turso_macros::{turso_assert, turso_debug_assert};
 use turso_parser::ast::{self, Select, SortOrder};
 
 /// Name identifier for the FTS index method, used in `CREATE INDEX ... USING fts`.

@@ -19,8 +19,8 @@ use crate::vdbe::insn::{
 };
 use crate::vdbe::{BranchOffset, CursorID};
 use crate::Result;
+use crate::{turso_assert, turso_assert_eq};
 use std::mem;
-use turso_macros::{turso_assert, turso_assert_eq};
 use turso_parser::ast::Name;
 use turso_parser::ast::{Expr, FunctionTail, Literal, Over, SortOrder, TableInternalId};
 

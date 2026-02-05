@@ -1,3 +1,4 @@
+use crate::turso_assert_eq;
 use core::fmt::{self, Debug};
 use std::{
     sync::{
@@ -10,7 +11,6 @@ use std::{
 use crate::sync::Mutex;
 
 use crate::{Buffer, CompletionError};
-use turso_macros::turso_assert_eq;
 
 /// Callback for read completions. Returns `Some(error)` if the callback detects an error
 /// (e.g., short read), which will be stored in the completion and propagated to VDBE.

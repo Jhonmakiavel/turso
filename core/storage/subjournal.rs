@@ -2,12 +2,11 @@ use crate::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use crate::{turso_assert, turso_assert_eq};
 
 use crate::{
     storage::sqlite3_ondisk::finish_read_page, Buffer, Completion, CompletionError, PageRef, Result,
 };
-#[allow(unused_imports)]
-use turso_macros::{turso_assert, turso_assert_eq};
 
 #[derive(Clone)]
 pub struct Subjournal {
@@ -103,11 +102,7 @@ impl Subjournal {
         page: PageRef,
         page_size: usize,
     ) -> Result<Completion> {
-        turso_assert_eq!(
-            buffer.len(),
-            page_size,
-            "buffer length should be page_size"
-        );
+        turso_assert_eq!(buffer.len(), page_size, "buffer length should be page_size");
         let c = Completion::new_read(
             buffer,
             move |res: Result<(Arc<Buffer>, i32), CompletionError>| {

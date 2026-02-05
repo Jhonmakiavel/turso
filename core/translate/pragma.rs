@@ -2,6 +2,7 @@
 //! More info: https://www.sqlite.org/pragma.html.
 
 use crate::sync::Arc;
+use crate::turso_soft_unreachable;
 use chrono::Datelike;
 use turso_macros::match_ignore_ascii_case;
 use turso_parser::ast::{self, ColumnDefinition, Expr, Literal};
@@ -25,7 +26,6 @@ use crate::vdbe::insn::{Cookie, Insn};
 use crate::{bail_parse_error, CaptureDataChangesMode, LimboError, Value};
 use std::str::FromStr;
 use strum::IntoEnumIterator;
-use turso_macros::turso_soft_unreachable;
 
 fn list_pragmas(program: &mut ProgramBuilder) {
     for x in PragmaName::iter() {
