@@ -742,7 +742,6 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
         let vfs_for_task = vfs_option.clone();
         let schema_for_task = schema.clone();
         let verbose = opts.verbose;
-        let silent = opts.silent;
         let busy_timeout = opts.busy_timeout;
         let tx_mode = opts.tx_mode;
 
@@ -757,9 +756,7 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
 
             conn.execute("PRAGMA data_sync_retry = 1", ()).await?;
 
-            if !silent {
-                progress_bar.set_message("executing queries...");
-            }
+            progress_bar.set_message("executing queries...");
 
             let mut rng = ThreadRng::new(global_seed.wrapping_add(thread as u64));
 
@@ -800,7 +797,7 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
 
                 if let Some(tx_stmt) = tx {
                     if verbose {
-                        eprintln!("thread#{thread}(start): {tx_stmt}");
+                        eprintln!("thread#{thread}: {tx_stmt}");
                     }
                     if let Err(e) = conn.execute(tx_stmt, ()).await {
                         if verbose {
@@ -811,15 +808,10 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
 
                 let sql = generate_random_statement(&mut rng, &schema_for_task);
 
-                if !silent {
-                    if verbose {
-                        progress_bar.println(format!("thread#{thread} executing query {sql}"));
-                    }
-                    progress_bar.set_position(i as u64);
-                }
                 if verbose {
-                    eprintln!("thread#{thread}(start): {sql}");
+                    progress_bar.println(format!("thread#{thread} executing query {sql}"));
                 }
+                progress_bar.set_position(i as u64);
                 if let Err(e) = conn.execute(&sql, ()).await {
                     match e {
                         turso::Error::Corrupt(e) => {
@@ -851,7 +843,7 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
                     }
                 }
                 if verbose {
-                    eprintln!("thread#{thread}(end): {sql}");
+                    eprintln!("thread#{thread}: end");
                 }
 
                 if tx.is_some() {
@@ -861,7 +853,7 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
                         "ROLLBACK;"
                     };
                     if verbose {
-                        eprintln!("thread#{thread}(start): {end_tx}");
+                        eprintln!("thread#{thread}: {end_tx}");
                     }
                     if let Err(e) = conn.execute(end_tx, ()).await {
                         if verbose {
@@ -873,7 +865,7 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
                 const INTEGRITY_CHECK_INTERVAL: usize = 100;
                 if i % INTEGRITY_CHECK_INTERVAL == 0 {
                     if verbose {
-                        eprintln!("thread#{thread}(start): PRAGMA integrity_check");
+                        eprintln!("thread#{thread}: PRAGMA integrity_check");
                     }
                     let mut res = conn.query("PRAGMA integrity_check", ()).await.unwrap();
                     match res.next().await {
@@ -897,15 +889,13 @@ async fn async_main(opts: Opts) -> Result<(), Box<dyn std::error::Error + Send +
                         Err(e) => println!("thread#{thread} Error performing integrity check: {e}"),
                         _ => {}
                     }
-                    if verbose {
-                        eprintln!("thread#{thread}(end): PRAGMA integrity_check");
-                    }
                 }
             }
             // In case this thread is running an exclusive transaction, commit it so that it doesn't block other threads.
             let _ = conn.execute("COMMIT", ()).await;
-            if !silent {
-                progress_bar.finish_with_message("done");
+            progress_bar.finish_with_message("done");
+            if verbose {
+                eprintln!("thread#{thread}: COMMIT");
             }
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
         });
