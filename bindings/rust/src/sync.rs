@@ -10,9 +10,9 @@ use std::{
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::{header::AUTHORIZATION, Request};
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{
-    client::legacy::{connect::HttpConnector, Client},
+    client::legacy::Client,
     rt::TokioExecutor,
 };
 use tokio::sync::mpsc;
@@ -493,12 +493,15 @@ impl IoWorker {
         mut rx: mpsc::UnboundedReceiver<()>,
         wakers: Arc<Mutex<Vec<Waker>>>,
     ) {
-        // Create HTTPS-capable Hyper client.
-        let mut http_connector = HttpConnector::new();
-        http_connector.enforce_http(false);
-        let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
-        let client: Client<HttpsConnector<HttpConnector>, Full<Bytes>> =
-            Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(https);
+        // Create HTTPS-capable Hyper client with rustls.
+        let https = HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .expect("failed to load native root certificates")
+            .https_or_http()
+            .enable_http1()
+            .build();
+        
+        let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(https);
 
         while rx.recv().await.is_some() {
             // Process all pending items in the sync IO queue.
@@ -568,16 +571,18 @@ impl IoWorker {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn process_http(
+    async fn process_http<C>(
         this: &Arc<IoWorker>,
-        client: &Client<HttpsConnector<HttpConnector>, Full<Bytes>>,
+        client: &Client<C, Full<Bytes>>,
         url: Option<&str>,
         method: &str,
         path: &str,
         body: Option<Bytes>,
         headers: &[(String, String)],
         completion: turso_sync_sdk_kit::sync_engine_io::SyncEngineIoCompletion<Bytes>,
-    ) {
+    ) where
+        C: hyper_util::client::legacy::connect::Connect + Clone + Send + Sync + 'static,
+    {
         // Build full URL.
         let full_url = if path.starts_with("http://") || path.starts_with("https://") {
             path.to_string()
