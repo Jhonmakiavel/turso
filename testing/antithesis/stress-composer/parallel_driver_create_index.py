@@ -5,7 +5,6 @@ import string
 
 import turso
 from antithesis.random import get_random, random_choice
-from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -83,7 +82,6 @@ if create_composite:
             create_stmt = f"CREATE INDEX {index_name} ON tbl_{selected_tbl} ({', '.join(col_specs)})"
             print(f"Creating composite index: {create_stmt}")
             cur.execute(create_stmt)
-            log_sql(create_stmt)
 
             # Store index information in init_state.db
             cur_init.execute(f"""
@@ -93,11 +91,9 @@ if create_composite:
             con_init.commit()
             print(f"Successfully created composite index: {index_name}")
         except turso.ProgrammingError as e:
-            log_sql(create_stmt, f"ERROR(programming): {e}")
             print(f"Table/column might have been dropped in parallel: {e}")
             con.rollback()
         except turso.OperationalError as e:
-            log_sql(create_stmt, f"ERROR(operational): {e}")
             print(f"Failed to create composite index: {e}")
             con.rollback()
     else:
@@ -135,7 +131,6 @@ else:
         try:
             print(f"Creating single-column index: {create_stmt}")
             cur.execute(create_stmt)
-            log_sql(create_stmt)
 
             # Store index information in init_state.db
             idx_type = "unique" if "UNIQUE" in create_stmt else "single"
@@ -146,11 +141,9 @@ else:
             con_init.commit()
             print(f"Successfully created {idx_type} index: {index_name}")
         except turso.ProgrammingError as e:
-            log_sql(create_stmt, f"ERROR(programming): {e}")
             print(f"Table/column might have been dropped in parallel: {e}")
             con.rollback()
         except turso.OperationalError as e:
-            log_sql(create_stmt, f"ERROR(operational): {e}")
             print(f"Failed to create index: {e}")
             con.rollback()
     else:

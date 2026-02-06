@@ -5,7 +5,6 @@ import json
 import turso
 from antithesis.random import get_random
 from helper_utils import generate_random_value
-from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -57,17 +56,16 @@ for i in range(updates):
     where_clause = f"col_{pk} = {generate_random_value(tbl_schema[f'col_{pk}']['data_type'])}"
     # print(where_clause)
 
-    update_sql = f"UPDATE tbl_{selected_tbl} SET {set_clause} WHERE {where_clause}"
     try:
-        cur.execute(update_sql)
-        log_sql(update_sql)
-    except turso.ProgrammingError as e:
+        cur.execute(f"""
+            UPDATE tbl_{selected_tbl} SET {set_clause} WHERE {where_clause}
+        """)
+    except turso.ProgrammingError:
         # Table/column might have been dropped in parallel - this is expected
-        log_sql(update_sql, f"ERROR(programming): {e}")
         con.rollback()
         break
-    except turso.IntegrityError as e:
+    except turso.IntegrityError:
         # Ignore constraint violations - can happen with random values
-        log_sql(update_sql, f"ERROR(integrity): {e}")
+        pass
 
 con.commit()

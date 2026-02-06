@@ -5,7 +5,6 @@ import json
 import turso
 from antithesis.assertions import always
 from antithesis.random import get_random
-from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -48,15 +47,10 @@ try:
     else:
         schema_before = result[0]
 
-    begin_sql = "BEGIN TRANSACTION"
-    cur.execute(begin_sql)
-    log_sql(begin_sql)
+    cur.execute("BEGIN TRANSACTION")
 
-    alter_sql = "ALTER TABLE " + tbl_name + " RENAME TO " + tbl_name + "_old"
-    cur.execute(alter_sql)
-    log_sql(alter_sql)
+    cur.execute("ALTER TABLE " + tbl_name + " RENAME TO " + tbl_name + "_old")
 
-    log_sql("ROLLBACK")
     con.rollback()
 
     cur = con.cursor()
@@ -71,7 +65,6 @@ try:
 
     always(schema_before == schema_after, "schema should be the same after rollback", {})
 except turso.ProgrammingError as e:
-    log_sql(alter_sql, f"ERROR(programming): {e}")
     print(f"Table {tbl_name} dropped in parallel: {e}")
     con.rollback()
     exit(0)

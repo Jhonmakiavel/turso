@@ -5,7 +5,6 @@ import string
 
 import turso
 from antithesis.random import get_random, random_choice
-from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -102,7 +101,7 @@ try:
     print(f"Creating table with {col_count} columns")
     print(f"Schema: {create_stmt}")
     cur.execute(create_stmt)
-    log_sql(create_stmt)
+
 
     # Store schema information
     cur_init.execute(f"""
@@ -129,9 +128,7 @@ try:
                 idx_name = f"idx_tbl{next_table_num}_col{j}_text_{index_suffix}"
 
             try:
-                idx_sql = f"CREATE INDEX {idx_name} ON tbl_{next_table_num} ({col_name})"
-                cur.execute(idx_sql)
-                log_sql(idx_sql)
+                cur.execute(f"CREATE INDEX {idx_name} ON tbl_{next_table_num} ({col_name})")
                 cur_init.execute(f"""
                     INSERT INTO indexes (idx_name, tbl_name, idx_type, cols)
                     VALUES ('{idx_name}', 'tbl_{next_table_num}', 'single', '{col_name}')
@@ -147,7 +144,6 @@ try:
         print(f"Created {indexes_created} initial indexes")
 
 except turso.OperationalError as e:
-    log_sql(create_stmt, f"ERROR(operational): {e}")
     print(f"Failed to create table: {e}")
     con.rollback()
     con_init.rollback()

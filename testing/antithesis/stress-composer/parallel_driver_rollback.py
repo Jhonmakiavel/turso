@@ -5,7 +5,6 @@ import json
 import turso
 from antithesis.random import get_random
 from helper_utils import generate_random_value
-from sql_logger import log_sql
 
 # Get initial state
 try:
@@ -42,19 +41,18 @@ print(f"Inserting {insertions} rows...")
 
 for i in range(insertions):
     values = [generate_random_value(tbl_schema[f"col_{col}"]["data_type"]) for col in range(tbl_schema["colCount"])]
-    insert_sql = f"INSERT INTO tbl_{selected_tbl} ({cols}) VALUES ({', '.join(values)})"
     try:
-        cur.execute(insert_sql)
-        log_sql(insert_sql)
-    except turso.ProgrammingError as e:
+        cur.execute(f"""
+            INSERT INTO tbl_{selected_tbl} ({cols})
+            VALUES ({", ".join(values)})
+        """)
+    except turso.ProgrammingError:
         # Table/column might have been dropped in parallel - this is expected
-        log_sql(insert_sql, f"ERROR(programming): {e}")
         con.rollback()
         break
-    except turso.IntegrityError as e:
+    except turso.IntegrityError:
         # Ignore constraint violations - can happen with random values
-        log_sql(insert_sql, f"ERROR(integrity): {e}")
+        pass
 
 print("Rolling back...")
-log_sql("ROLLBACK")
 con.rollback()

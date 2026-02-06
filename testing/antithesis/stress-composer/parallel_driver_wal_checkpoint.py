@@ -3,7 +3,6 @@
 import turso
 from antithesis.assertions import always
 from antithesis.random import get_random
-from sql_logger import log_sql
 
 try:
     con = turso.connect("stress_composer.db")
@@ -19,9 +18,8 @@ selected_mode = modes[get_random() % len(modes)]
 
 print(f"Running wal_checkpoint({selected_mode})...")
 
-checkpoint_sql = f"PRAGMA wal_checkpoint({selected_mode})"
 try:
-    result = cur.execute(checkpoint_sql)
+    result = cur.execute(f"PRAGMA wal_checkpoint({selected_mode})")
     row = result.fetchone()
     # wal_checkpoint returns (busy, log, checkpointed)
     # busy should be 0 on success, 1 if blocked
@@ -33,12 +31,9 @@ try:
         always(log >= 0, f"wal_checkpoint returned negative log value: {log}", {})
         always(checkpointed >= 0, f"wal_checkpoint returned negative checkpointed value: {checkpointed}", {})
         always(checkpointed <= log, f"checkpointed ({checkpointed}) > log ({log})", {})
-        log_sql(checkpoint_sql, f"OK busy={busy} log={log} checkpointed={checkpointed}")
         print(f"wal_checkpoint result: busy={busy}, log={log}, checkpointed={checkpointed}")
     else:
-        log_sql(checkpoint_sql, "OK (no result)")
         print("wal_checkpoint returned no result (database may not be in WAL mode)")
 except Exception as e:
     # wal_checkpoint can fail if database is busy or not in WAL mode
-    log_sql(checkpoint_sql, f"ERROR: {e}")
     print(f"wal_checkpoint failed: {e}")
