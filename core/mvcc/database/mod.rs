@@ -31,7 +31,6 @@ use crate::Result;
 use crate::ValueRef;
 use crate::{
     turso_assert, turso_assert_eq, turso_assert_less_than, turso_assert_reachable,
-    turso_soft_unreachable,
 };
 use crate::{Connection, Pager, SyncMode};
 use crossbeam_skiplist::map::Entry;
@@ -2992,9 +2991,6 @@ impl<Clock: LogicalClock> MvStore<Clock> {
                         let val = match record.get_value_opt(3) {
                             Some(v) => v,
                             None => {
-                                turso_soft_unreachable!(
-                                    "Expected at least 4 columns in sqlite_schema"
-                                );
                                 return Err(LimboError::InternalError(
                                     "Expected at least 4 columns in sqlite_schema".to_string(),
                                 ));

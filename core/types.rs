@@ -1,4 +1,4 @@
-use crate::{turso_debug_assert, turso_soft_unreachable};
+use crate::turso_debug_assert;
 use branches::{mark_unlikely, unlikely};
 use either::Either;
 #[cfg(feature = "serde")]
@@ -1373,7 +1373,6 @@ impl ImmutableRecord {
     #[inline]
     pub fn first_value(&self) -> Result<ValueRef<'_>> {
         if unlikely(self.is_invalidated()) {
-            turso_soft_unreachable!("Record is invalidated");
             return Err(LimboError::InternalError("Record is invalidated".into()));
         }
         match self.iter()?.next() {
@@ -1385,7 +1384,6 @@ impl ImmutableRecord {
     #[inline]
     pub fn get_value(&self, idx: usize) -> Result<ValueRef<'_>> {
         if unlikely(self.is_invalidated()) {
-            turso_soft_unreachable!("Record is invalidated");
             return Err(LimboError::InternalError("Record is invalidated".into()));
         }
         let mut iter = self.iter()?;

@@ -8804,7 +8804,6 @@ pub fn op_open_ephemeral(
                     let rand_path = std::path::Path::new(&temp_dir)
                         .join(format!("tursodb-ephemeral-{rand_num}"));
                     let Some(rand_path_str) = rand_path.to_str() else {
-                        turso_soft_unreachable!("Failed to convert path to string");
                         return Err(LimboError::InternalError(
                             "Failed to convert path to string".to_string(),
                         ));
@@ -11341,7 +11340,6 @@ pub fn op_max_pgcnt(
     load_insn!(MaxPgcnt { db, dest, new_max }, insn);
 
     if *db > 0 {
-        turso_soft_unreachable!("temp/attached databases not implemented yet");
         return Err(LimboError::InternalError(
             "temp/attached databases not implemented yet".to_string(),
         ));
@@ -11423,7 +11421,6 @@ fn op_journal_mode_inner(
 
     load_insn!(JournalMode { db, dest, new_mode }, insn);
     if *db > 0 {
-        turso_soft_unreachable!("temp/attached databases not implemented yet");
         return Err(LimboError::InternalError(
             "temp/attached databases not implemented yet".to_string(),
         ));

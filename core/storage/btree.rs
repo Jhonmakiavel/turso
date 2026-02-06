@@ -28,7 +28,6 @@ use crate::{
 use crate::{
     turso_assert_eq, turso_assert_greater_than, turso_assert_greater_than_or_equal,
     turso_assert_less_than, turso_assert_less_than_or_equal, turso_assert_ne,
-    turso_soft_unreachable,
 };
 use branches::mark_unlikely;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -4466,7 +4465,6 @@ impl BTreeCursor {
                                     .get()
                         {
                             self.overflow_state = OverflowState::Start;
-                            turso_soft_unreachable!("Invalid overflow page number");
                             return Err(LimboError::Corrupt("Invalid overflow page number".into()));
                         }
                         let (page, c) = self.read_page(next_page as i64)?;
@@ -4499,7 +4497,6 @@ impl BTreeCursor {
                                     .get()
                         {
                             self.overflow_state = OverflowState::Start;
-                            turso_soft_unreachable!("Invalid overflow page number");
                             return Err(LimboError::Corrupt("Invalid overflow page number".into()));
                         }
                         let (page, c) = self.read_page(next as i64)?;

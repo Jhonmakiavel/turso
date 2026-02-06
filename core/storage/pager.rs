@@ -1868,7 +1868,6 @@ impl Pager {
 
                     // Check if the calculated offset for the entry is within the bounds of the actual page data length.
                     if offset_in_ptrmap_page + PTRMAP_ENTRY_SIZE > actual_data_length {
-                        turso_soft_unreachable!("Ptrmap offset out of bounds", { "offset": offset_in_ptrmap_page, "entry_size": PTRMAP_ENTRY_SIZE, "page": ptrmap_pg_no, "data_len": actual_data_length });
                         return Err(LimboError::InternalError(format!(
                         "Ptrmap offset {offset_in_ptrmap_page} + entry size {PTRMAP_ENTRY_SIZE} out of bounds for page {ptrmap_pg_no} (actual data len {actual_data_length})"
                     )));
@@ -1957,7 +1956,6 @@ impl Pager {
                     let full_buffer_slice = page_content.as_ptr();
 
                     if offset_in_ptrmap_page + PTRMAP_ENTRY_SIZE > full_buffer_slice.len() {
-                        turso_soft_unreachable!("Ptrmap offset out of bounds", { "offset": offset_in_ptrmap_page, "entry_size": PTRMAP_ENTRY_SIZE, "page": ptrmap_pg_no, "data_len": full_buffer_slice.len() });
                         return Err(LimboError::InternalError(format!(
                         "Ptrmap offset {} + entry size {} out of bounds for page {} (actual data len {})",
                         offset_in_ptrmap_page,
@@ -4634,7 +4632,6 @@ pub(crate) mod ptrmap {
     impl PtrmapEntry {
         pub fn serialize(&self, buffer: &mut [u8]) -> Result<()> {
             if buffer.len() < PTRMAP_ENTRY_SIZE {
-                turso_soft_unreachable!("Buffer too small to serialize ptrmap entry", { "expected": PTRMAP_ENTRY_SIZE, "got": buffer.len() });
                 return Err(LimboError::InternalError(format!(
                     "Buffer too small to serialize ptrmap entry. Expected at least {} bytes, got {}",
                     PTRMAP_ENTRY_SIZE,

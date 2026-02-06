@@ -555,16 +555,17 @@ pub fn turso_assert(input: TokenStream) -> TokenStream {
     let details = details_json(&input.details);
 
     let assert_call = if let Some(fmt_args) = &input.format_args {
-        quote! { assert!(#cond, #msg, #fmt_args); }
+        quote! { assert!(__turso_cond, #msg, #fmt_args); }
     } else {
-        quote! { assert!(#cond, "{}", #msg); }
+        quote! { assert!(__turso_cond, "{}", #msg); }
     };
 
     quote! {
         {
+            let __turso_cond = #cond;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#cond, #prefixed, #details);
+                antithesis_sdk::assert_always_or_unreachable!(__turso_cond, #prefixed, #details);
             }
             #assert_call
         }
@@ -588,16 +589,17 @@ pub fn turso_debug_assert(input: TokenStream) -> TokenStream {
     let details = details_json(&input.details);
 
     let assert_call = if let Some(fmt_args) = &input.format_args {
-        quote! { debug_assert!(#cond, #msg, #fmt_args); }
+        quote! { debug_assert!(__turso_cond, #msg, #fmt_args); }
     } else {
-        quote! { debug_assert!(#cond, "{}", #msg); }
+        quote! { debug_assert!(__turso_cond, "{}", #msg); }
     };
 
     quote! {
         {
+            let __turso_cond = #cond;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#cond, #prefixed, #details);
+                antithesis_sdk::assert_always_or_unreachable!(__turso_cond, #prefixed, #details);
             }
             #assert_call
         }
@@ -621,13 +623,14 @@ pub fn turso_assert_sometimes(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let __turso_cond = #cond;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes!(#cond, #prefixed, #details);
+                antithesis_sdk::assert_sometimes!(__turso_cond, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = #cond;
+                let _ = __turso_cond;
             }
         }
     }
@@ -673,7 +676,7 @@ pub fn turso_assert_some(input: TokenStream) -> TokenStream {
 }
 
 /// Assert that all named conditions are always true when reached.
-/// No fuzzer guidance — just a plain AND of all conditions.
+/// No fuzzer guidance -- just a plain AND of all conditions.
 /// must_hit=false: OK if this code path is never reached.
 ///
 /// Usage:
@@ -791,19 +794,21 @@ pub fn turso_assert_greater_than(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
                 antithesis_sdk::numeric_guidance_helper!(
                     antithesis_sdk::assert_always_or_unreachable,
                     >,
                     false,
-                    #left,
-                    #right,
+                    *__turso_left,
+                    *__turso_right,
                     #prefixed,
                     #details
                 );
             }
-            assert!(#left > #right, "{}", #msg);
+            assert!(__turso_left > __turso_right, "{}", #msg);
         }
     }
     .into()
@@ -825,19 +830,21 @@ pub fn turso_assert_greater_than_or_equal(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
                 antithesis_sdk::numeric_guidance_helper!(
                     antithesis_sdk::assert_always_or_unreachable,
                     >=,
                     false,
-                    #left,
-                    #right,
+                    *__turso_left,
+                    *__turso_right,
                     #prefixed,
                     #details
                 );
             }
-            assert!(#left >= #right, "{}", #msg);
+            assert!(__turso_left >= __turso_right, "{}", #msg);
         }
     }
     .into()
@@ -859,19 +866,21 @@ pub fn turso_assert_less_than(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
                 antithesis_sdk::numeric_guidance_helper!(
                     antithesis_sdk::assert_always_or_unreachable,
                     <,
                     true,
-                    #left,
-                    #right,
+                    *__turso_left,
+                    *__turso_right,
                     #prefixed,
                     #details
                 );
             }
-            assert!(#left < #right, "{}", #msg);
+            assert!(__turso_left < __turso_right, "{}", #msg);
         }
     }
     .into()
@@ -893,19 +902,21 @@ pub fn turso_assert_less_than_or_equal(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
                 antithesis_sdk::numeric_guidance_helper!(
                     antithesis_sdk::assert_always_or_unreachable,
                     <=,
                     true,
-                    #left,
-                    #right,
+                    *__turso_left,
+                    *__turso_right,
                     #prefixed,
                     #details
                 );
             }
-            assert!(#left <= #right, "{}", #msg);
+            assert!(__turso_left <= __turso_right, "{}", #msg);
         }
     }
     .into()
@@ -927,11 +938,13 @@ pub fn turso_assert_eq(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_always_or_unreachable!(#left == #right, #prefixed, #details);
+                antithesis_sdk::assert_always_or_unreachable!(__turso_left == __turso_right, #prefixed, #details);
             }
-            assert_eq!(#left, #right, "{}", #msg);
+            assert_eq!(__turso_left, __turso_right, "{}", #msg);
         }
     }
     .into()
@@ -953,19 +966,21 @@ pub fn turso_assert_ne(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
                 antithesis_sdk::numeric_guidance_helper!(
                     antithesis_sdk::assert_always_or_unreachable,
                     !=,
                     false,
-                    #left,
-                    #right,
+                    *__turso_left,
+                    *__turso_right,
                     #prefixed,
                     #details
                 );
             }
-            assert_ne!(#left, #right, "{}", #msg);
+            assert_ne!(__turso_left, __turso_right, "{}", #msg);
         }
     }
     .into()
@@ -987,13 +1002,15 @@ pub fn turso_assert_sometimes_greater_than(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_greater_than!(#left, #right, #prefixed, #details);
+                antithesis_sdk::assert_sometimes_greater_than!(*__turso_left, *__turso_right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = (#left, #right);
+                let _ = (__turso_left, __turso_right);
             }
         }
     }
@@ -1016,13 +1033,15 @@ pub fn turso_assert_sometimes_less_than(input: TokenStream) -> TokenStream {
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_less_than!(#left, #right, #prefixed, #details);
+                antithesis_sdk::assert_sometimes_less_than!(*__turso_left, *__turso_right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = (#left, #right);
+                let _ = (__turso_left, __turso_right);
             }
         }
     }
@@ -1045,13 +1064,15 @@ pub fn turso_assert_sometimes_greater_than_or_equal(input: TokenStream) -> Token
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_greater_than_or_equal_to!(#left, #right, #prefixed, #details);
+                antithesis_sdk::assert_sometimes_greater_than_or_equal_to!(*__turso_left, *__turso_right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = (#left, #right);
+                let _ = (__turso_left, __turso_right);
             }
         }
     }
@@ -1074,13 +1095,15 @@ pub fn turso_assert_sometimes_less_than_or_equal(input: TokenStream) -> TokenStr
 
     quote! {
         {
+            let ref __turso_left = #left;
+            let ref __turso_right = #right;
             #[cfg(feature = "antithesis")]
             {
-                antithesis_sdk::assert_sometimes_less_than_or_equal_to!(#left, #right, #prefixed, #details);
+                antithesis_sdk::assert_sometimes_less_than_or_equal_to!(*__turso_left, *__turso_right, #prefixed, #details);
             }
             #[cfg(not(feature = "antithesis"))]
             {
-                let _ = (#left, #right);
+                let _ = (__turso_left, __turso_right);
             }
         }
     }
