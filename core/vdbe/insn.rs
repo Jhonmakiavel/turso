@@ -220,6 +220,16 @@ pub struct HashBuildData {
     pub num_payload: usize,
 }
 
+/// Data for HashDistinct instruction (boxed to keep Insn small).
+#[derive(Debug, Clone)]
+pub struct HashDistinctData {
+    pub hash_table_id: usize,
+    pub key_start_reg: usize,
+    pub num_keys: usize,
+    pub collations: Vec<CollationSeq>,
+    pub target_pc: BranchOffset,
+}
+
 // There are currently 190 opcodes in sqlite
 #[repr(u8)]
 #[derive(Description, Debug, Clone, EnumDiscriminants)]
@@ -1384,6 +1394,11 @@ pub enum Insn {
         data: Box<HashBuildData>,
     },
 
+    /// Deduplicate using a hash table. Jumps to target_pc if duplicate found.
+    HashDistinct {
+        data: Box<HashDistinctData>,
+    },
+
     /// Finalize the hash table build phase. Transitions the hash table from Building to Probing state.
     /// Should be called after the HashBuild loop completes.
     HashBuildFinalize {
@@ -1427,6 +1442,18 @@ pub enum Insn {
     /// Closes the hash table referenced by hash_table_id and releases memory.
     HashClose {
         hash_table_id: usize,
+    },
+
+    /// Clear hash table entries without releasing the table itself.
+    HashClear {
+        hash_table_id: usize,
+    },
+
+    /// VACUUM INTO - create a compacted copy of the database at the specified path.
+    /// This copies all schema and data from the current database to a new file.
+    VacuumInto {
+        /// Destination file path for the vacuumed database
+        dest_path: String,
     },
 }
 
@@ -1613,10 +1640,13 @@ impl InsnVariants {
             InsnVariants::FilterAdd => execute::op_filter_add,
             InsnVariants::Filter => execute::op_filter,
             InsnVariants::HashBuild => execute::op_hash_build,
+            InsnVariants::HashDistinct => execute::op_hash_distinct,
             InsnVariants::HashBuildFinalize => execute::op_hash_build_finalize,
             InsnVariants::HashProbe => execute::op_hash_probe,
             InsnVariants::HashNext => execute::op_hash_next,
             InsnVariants::HashClose => execute::op_hash_close,
+            InsnVariants::HashClear => execute::op_hash_clear,
+            InsnVariants::VacuumInto => execute::op_vacuum_into,
         }
     }
 }

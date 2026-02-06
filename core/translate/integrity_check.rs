@@ -73,6 +73,9 @@ fn translate_integrity_check_impl(
     // Collect root pages and table/index metadata for integrity check
     for table in schema.tables.values() {
         if let crate::schema::Table::BTree(btree_table) = table.as_ref() {
+            if btree_table.root_page < 0 {
+                continue;
+            }
             root_pages.push(btree_table.root_page);
 
             let mut table_indexes = Vec::new();
@@ -148,6 +151,13 @@ fn translate_integrity_check_impl(
                 rowid_alias_column_pos,
             });
         };
+    }
+
+    // Include root pages from tables/indexes that have been dropped but not yet checkpointed.
+    // In MVCC mode, dropped tables' btree pages are not freed until checkpoint, so we need
+    // to check them to avoid "page never used" false positives.
+    for &dropped_root in &schema.dropped_root_pages {
+        root_pages.push(dropped_root);
     }
 
     let message_register = program.alloc_register();

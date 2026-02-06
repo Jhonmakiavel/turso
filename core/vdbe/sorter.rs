@@ -83,6 +83,8 @@ pub struct Sorter {
     init_chunk_heap_state: InitChunkHeapState,
     /// Pending IO completion along with the chunk index that needs to be retried after IO completes.
     pending_completion: Option<(Completion, usize)>,
+    /// Temp storage mode (memory vs file) for spilled data
+    temp_store: crate::TempStore,
 }
 
 impl Sorter {
@@ -92,6 +94,7 @@ impl Sorter {
         max_buffer_size_bytes: usize,
         min_chunk_read_buffer_size_bytes: usize,
         io: Arc<dyn IO>,
+        temp_store: crate::TempStore,
     ) -> Self {
         assert_eq!(order.len(), collations.len());
         Self {
@@ -122,6 +125,7 @@ impl Sorter {
             insert_state: InsertState::Start,
             init_chunk_heap_state: InitChunkHeapState::Start,
             pending_completion: None,
+            temp_store,
         }
     }
 
@@ -391,7 +395,7 @@ impl Sorter {
         let chunk_file = match &self.temp_file {
             Some(temp_file) => temp_file.file.clone(),
             None => {
-                let temp_file = TempFile::new(&self.io)?;
+                let temp_file = TempFile::with_temp_store(&self.io, self.temp_store)?;
                 let chunk_file = temp_file.file.clone();
                 self.temp_file = Some(temp_file);
                 chunk_file
@@ -639,7 +643,7 @@ impl SortedChunk {
         let total_bytes_read_copy = self.total_bytes_read.clone();
         let read_complete = Box::new(move |res: Result<(Arc<Buffer>, i32), CompletionError>| {
             let Ok((buf, bytes_read)) = res else {
-                return;
+                return None;
             };
             let read_buf_ref = buf.clone();
             let read_buf = read_buf_ref.as_slice();
@@ -647,7 +651,7 @@ impl SortedChunk {
             let bytes_read = bytes_read as usize;
             if bytes_read == 0 {
                 *chunk_io_state_copy.write() = SortedChunkIOState::ReadEOF;
-                return;
+                return None;
             }
             *chunk_io_state_copy.write() = SortedChunkIOState::ReadComplete;
 
@@ -661,6 +665,7 @@ impl SortedChunk {
 
             stored_buffer_len_copy.store(stored_buf_len, atomic::Ordering::SeqCst);
             total_bytes_read_copy.fetch_add(bytes_read, atomic::Ordering::SeqCst);
+            None
         });
 
         let c = Completion::new_read(read_buffer_ref, read_complete);
@@ -973,6 +978,7 @@ mod tests {
                 256,
                 64,
                 io.clone(),
+                crate::TempStore::Default,
             );
 
             let num_records = 1000 + rng.next_u64() % 2000;

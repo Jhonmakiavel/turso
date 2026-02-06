@@ -40,6 +40,7 @@ pub(crate) mod trigger;
 pub(crate) mod trigger_exec;
 pub(crate) mod update;
 pub(crate) mod upsert;
+pub(crate) mod vacuum;
 mod values;
 pub(crate) mod view;
 mod window;
@@ -153,7 +154,7 @@ pub fn translate_inner(
         }
         ast::Stmt::Analyze { name } => translate_analyze(name, resolver, program)?,
         ast::Stmt::Attach { expr, db_name, key } => {
-            attach::translate_attach(&expr, resolver, &db_name, &key, program)?
+            attach::translate_attach(&expr, resolver, &db_name, &key, program, connection.clone())?
         }
         ast::Stmt::Begin { typ, name } => translate_tx_begin(typ, name, resolver.schema, program)?,
         ast::Stmt::Commit { name } => translate_tx_commit(name, program)?,
@@ -243,9 +244,6 @@ pub fn translate_inner(
             order_by,
             with,
         } => {
-            if with.is_some() {
-                bail_parse_error!("WITH clause is not supported in DELETE");
-            }
             if indexed.is_some_and(|i| matches!(i, Indexed::IndexedBy(_))) {
                 bail_parse_error!("INDEXED BY clause is not supported in DELETE");
             }
@@ -258,11 +256,14 @@ pub fn translate_inner(
                 where_clause,
                 limit,
                 returning,
+                with,
                 program,
                 connection,
             )?
         }
-        ast::Stmt::Detach { name } => attach::translate_detach(&name, resolver, program)?,
+        ast::Stmt::Detach { name } => {
+            attach::translate_detach(&name, resolver, program, connection.clone())?
+        }
         ast::Stmt::DropIndex {
             if_exists,
             idx_name,
@@ -311,7 +312,9 @@ pub fn translate_inner(
             .program
         }
         ast::Stmt::Update(update) => translate_update(update, resolver, program, connection)?,
-        ast::Stmt::Vacuum { .. } => bail_parse_error!("VACUUM not supported yet"),
+        ast::Stmt::Vacuum { name, into } => {
+            vacuum::translate_vacuum(program, name.as_ref(), into.as_deref())?
+        }
         ast::Stmt::Insert {
             with,
             or_conflict,
@@ -319,21 +322,17 @@ pub fn translate_inner(
             columns,
             body,
             returning,
-        } => {
-            if with.is_some() {
-                crate::bail_parse_error!("WITH clause is not supported");
-            }
-            translate_insert(
-                resolver,
-                or_conflict,
-                tbl_name,
-                columns,
-                body,
-                returning,
-                program,
-                connection,
-            )?
-        }
+        } => translate_insert(
+            resolver,
+            or_conflict,
+            tbl_name,
+            columns,
+            body,
+            returning,
+            with,
+            program,
+            connection,
+        )?,
     };
 
     // Indicate write operations so that in the epilogue we can emit the correct type of transaction

@@ -1273,18 +1273,49 @@ pub enum TableConstraint {
     },
 }
 
-bitflags::bitflags! {
-    /// `CREATE TABLE` options
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct TableOptions: u8 {
-        /// None
-        const NONE = 0;
-        /// `WITHOUT ROWID`
-        const WITHOUT_ROWID = 1;
-        /// `STRICT`
-        const STRICT = 2;
+/// `CREATE TABLE` options with preserved original text
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TableOptions {
+    /// Original text for WITHOUT ROWID option (e.g., "WITHOUT ROWID", "without rowid", "WiThOuT rOwId")
+    pub without_rowid_text: Option<String>,
+    /// Original text for STRICT option (e.g., "STRICT", "strict", "StRiCt")
+    pub strict_text: Option<String>,
+}
+
+impl TableOptions {
+    /// Create empty table options
+    pub fn empty() -> Self {
+        Self {
+            without_rowid_text: None,
+            strict_text: None,
+        }
     }
+
+    /// Check if table has WITHOUT ROWID option
+    pub fn contains_without_rowid(&self) -> bool {
+        self.without_rowid_text.is_some()
+    }
+
+    /// Check if table has STRICT option
+    pub fn contains_strict(&self) -> bool {
+        self.strict_text.is_some()
+    }
+
+    /// For backward compatibility with bitflags interface
+    pub fn contains(&self, flag: TableOptionsFlag) -> bool {
+        match flag {
+            TableOptionsFlag::WithoutRowid => self.contains_without_rowid(),
+            TableOptionsFlag::Strict => self.contains_strict(),
+        }
+    }
+}
+
+/// Flags for table options (used for backward compatibility)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TableOptionsFlag {
+    WithoutRowid,
+    Strict,
 }
 
 /// Sort orders
@@ -1483,6 +1514,9 @@ pub enum PragmaName {
     FreelistCount,
     /// Enable or disable foreign key constraint enforcement
     ForeignKeys,
+    /// Use F_FULLFSYNC instead of fsync on macOS (only supported on macOS)
+    #[cfg(target_vendor = "apple")]
+    Fullfsync,
     /// Run integrity check on the database file
     IntegrityCheck,
     /// `journal_mode` pragma
@@ -1510,6 +1544,8 @@ pub enum PragmaName {
     SchemaVersion,
     /// Control database synchronization mode (OFF | FULL | NORMAL | EXTRA)
     Synchronous,
+    /// Control where temporary tables and indices are stored (DEFAULT=0, FILE=1, MEMORY=2)
+    TempStore,
     /// returns information about the columns of a table
     TableInfo,
     /// returns extended information about the columns of a table

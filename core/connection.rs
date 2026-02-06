@@ -1,7 +1,7 @@
 #[cfg(target_family = "windows")]
 use crate::error::CompletionError;
 use crate::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU16, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU16, AtomicU64, Ordering},
     Arc, RwLock,
 };
 #[cfg(all(feature = "fs", feature = "conn_raw_api"))]
@@ -15,27 +15,52 @@ use crate::{
     io::{MemoryIO, PlatformIO, IO},
     match_ignore_ascii_case, parse_schema_rows, refresh_analyze_stats, translate, turso_assert,
     util::IOExt,
-    vdbe, AllViewsTxState, AtomicCipherMode, AtomicSyncMode, AtomicTransactionState, BusyHandler,
-    BusyHandlerCallback, CaptureDataChangesMode, CheckpointMode, CheckpointResult, CipherMode, Cmd,
-    Completion, ConnectionMetrics, Database, DatabaseCatalog, DatabaseOpts, Duration,
-    EncryptionKey, EncryptionOpts, IndexMethod, LimboError, MvStore, OpenFlags, PageSize, Pager,
-    Parser, QueryMode, QueryRunner, Result, Schema, Statement, SyncMode, TransactionMode,
-    TransactionState, Trigger, Value, VirtualTable,
+    vdbe, AllViewsTxState, AtomicCipherMode, AtomicSyncMode, AtomicTempStore,
+    AtomicTransactionState, BusyHandler, BusyHandlerCallback, CaptureDataChangesMode,
+    CheckpointMode, CheckpointResult, CipherMode, Cmd, Completion, ConnectionMetrics, Database,
+    DatabaseCatalog, DatabaseOpts, Duration, EncryptionKey, EncryptionOpts, IndexMethod,
+    LimboError, MvStore, OpenFlags, PageSize, Pager, Parser, QueryMode, QueryRunner, Result,
+    Schema, Statement, SyncMode, TransactionMode, TransactionState, Trigger, Value, VirtualTable,
 };
 use arc_swap::ArcSwap;
-use rustc_hash::FxHashMap;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::fmt::Display;
 use std::ops::Deref;
 use tracing::{instrument, Level};
 
+/// Database connection handle.
+///
+/// # Compile-Affecting Fields
+///
+/// The following fields affect SQL statement compilation and are tracked by `PrepareContext`
+/// in `vdbe/mod.rs`. If you add a new field that affects how statements are compiled or
+/// executed, you MUST also update `PrepareContext::from_connection()` to include it
+/// in core/vdbe/mod.rs.
+/// Failure to do so will cause stale cached statements to be used incorrectly.
+///
+/// Currently tracked fields:
+/// - `db` (via database pointer identity)
+/// - `fk_pragma` (foreign_keys)
+/// - `query_only`
+/// - `capture_data_changes`
+/// - `syms` / `syms_generation` (registered functions, virtual tables, etc.)
+/// - `attached_databases` (via fingerprint)
+/// - `busy_handler` (timeout affects retry behavior)
+/// - `cache_size`
+/// - `page_size`
+/// - `sync_mode`
+/// - `data_sync_retry`
+/// - `encryption_key` (whether set)
+/// - `encryption_cipher_mode`
+/// - Pager's `spill_enabled` setting
+/// - MVCC checkpoint threshold (when MVCC enabled)
 pub struct Connection {
     pub(crate) db: Arc<Database>,
     pub(crate) pager: ArcSwap<Pager>,
     pub(crate) schema: RwLock<Arc<Schema>>,
     /// Per-database schema cache (database_index -> schema)
     /// Loaded lazily to avoid copying all schemas on connection open
-    pub(super) database_schemas: RwLock<FxHashMap<usize, Arc<Schema>>>,
+    pub(super) database_schemas: RwLock<HashMap<usize, Arc<Schema>>>,
     /// Whether to automatically commit transaction
     pub(crate) auto_commit: AtomicBool,
     pub(super) transaction_state: AtomicTransactionState,
@@ -43,6 +68,7 @@ pub struct Connection {
     pub(crate) last_change: AtomicI64,
     pub(crate) total_changes: AtomicI64,
     pub(crate) syms: parking_lot::RwLock<SymbolTable>,
+    pub(crate) syms_generation: AtomicU64,
     pub(super) _shared_cache: bool,
     pub(super) cache_size: AtomicI32,
     /// page size used for an uninitialized database or the next vacuum command.
@@ -78,6 +104,7 @@ pub struct Connection {
     pub(crate) encryption_key: RwLock<Option<EncryptionKey>>,
     pub(super) encryption_cipher_mode: AtomicCipherMode,
     pub(super) sync_mode: AtomicSyncMode,
+    pub(super) temp_store: AtomicTempStore,
     pub(super) data_sync_retry: AtomicBool,
     /// Busy handler for lock contention
     /// Default is BusyHandler::None (return SQLITE_BUSY immediately)
@@ -91,6 +118,13 @@ pub struct Connection {
     pub(crate) vtab_txn_states: RwLock<HashSet<u64>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AttachedDatabasesFingerprint {
+    pub(crate) count: usize,
+    pub(crate) hash1: u64,
+    pub(crate) hash2: u64,
+}
+
 // SAFETY: This needs to be audited for thread safety.
 // See: https://github.com/tursodatabase/turso/issues/1552
 crate::assert::assert_send_sync!(Connection);
@@ -98,6 +132,24 @@ crate::assert::assert_send_sync!(Connection);
 impl Drop for Connection {
     fn drop(&mut self) {
         if !self.is_closed() {
+            // Release any WAL locks the connection might be holding.
+            // This prevents deadlocks if a connection is dropped (e.g., due to a panic)
+            // while holding a read or write lock.
+            let pager = self.pager.load();
+            if let Some(wal) = &pager.wal {
+                // TODO: remove this if once we start using WAL txns in MVCC, see https://github.com/tursodatabase/turso/issues/5011
+                if !self.mvcc_enabled() {
+                    // Write lock is tracked by TransactionState
+                    if matches!(self.transaction_state.get(), TransactionState::Write { .. }) {
+                        wal.end_write_tx();
+                    }
+                    // Read lock is tracked by the WAL itself
+                    if wal.holds_read_lock() {
+                        wal.end_read_tx();
+                    }
+                }
+            }
+
             // if connection wasn't properly closed, decrement the connection counter
             self.db
                 .n_connections
@@ -767,6 +819,8 @@ impl Connection {
     /// All frames written after last commit frame (db_size > 0) within the session will be rolled back
     #[cfg(all(feature = "fs", feature = "conn_raw_api"))]
     pub fn wal_insert_end(self: &Arc<Connection>, force_commit: bool) -> Result<()> {
+        use crate::{return_if_io, types::IOResult};
+
         {
             let pager = self.pager.load();
 
@@ -780,11 +834,13 @@ impl Connection {
                 pager
                     .io
                     .block(|| {
-                        pager.commit_dirty_pages(
+                        return_if_io!(pager.commit_dirty_pages(
                             true,
                             self.get_sync_mode(),
                             self.get_data_sync_retry(),
-                        )
+                        ));
+                        pager.commit_dirty_pages_end();
+                        Ok(IOResult::Done(()))
                     })
                     .err()
             } else {
@@ -1072,6 +1128,10 @@ impl Connection {
         self.db.experimental_triggers_enabled()
     }
 
+    pub fn experimental_attach_enabled(&self) -> bool {
+        self.db.experimental_attach_enabled()
+    }
+
     pub fn mvcc_enabled(&self) -> bool {
         self.db.mvcc_enabled()
     }
@@ -1319,6 +1379,58 @@ impl Connection {
         }
     }
 
+    pub(crate) fn attached_databases_fingerprint(&self) -> AttachedDatabasesFingerprint {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+        fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
+            for &byte in bytes {
+                hash ^= byte as u64;
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+            hash
+        }
+
+        fn hash_u64(hash: u64, value: u64) -> u64 {
+            hash_bytes(hash, &value.to_le_bytes())
+        }
+
+        fn hash_entry(index: usize, alias: &str, db_ptr: usize) -> u64 {
+            let mut hash = FNV_OFFSET_BASIS;
+            hash = hash_u64(hash, index as u64);
+            hash = hash_bytes(hash, alias.as_bytes());
+            hash_u64(hash, db_ptr as u64)
+        }
+
+        let attached = self.attached_databases.read();
+        if attached.name_to_index.is_empty() {
+            return AttachedDatabasesFingerprint {
+                count: 0,
+                hash1: 0,
+                hash2: 0,
+            };
+        }
+
+        let mut hash1 = 0u64;
+        let mut hash2 = 0u64;
+        for (alias, &index) in attached.name_to_index.iter() {
+            let db_ptr = attached
+                .index_to_data
+                .get(&index)
+                .map(|(db, _pager)| Arc::as_ptr(db) as usize)
+                .unwrap_or(0);
+            let entry_hash = hash_entry(index, alias.as_str(), db_ptr);
+            hash1 = hash1.wrapping_add(entry_hash);
+            hash2 ^= entry_hash.rotate_left(17);
+        }
+
+        AttachedDatabasesFingerprint {
+            count: attached.name_to_index.len(),
+            hash1,
+            hash2,
+        }
+    }
+
     /// List all databases (main + attached) with their sequence numbers, names, and file paths
     /// Returns a vector of tuples: (seq_number, name, file_path)
     pub fn list_all_databases(&self) -> Vec<(usize, String, String)> {
@@ -1365,6 +1477,14 @@ impl Connection {
         self.sync_mode.set(mode);
     }
 
+    pub fn get_temp_store(&self) -> crate::TempStore {
+        self.temp_store.get()
+    }
+
+    pub fn set_temp_store(&self, value: crate::TempStore) {
+        self.temp_store.set(value);
+    }
+
     pub fn get_data_sync_retry(&self) -> bool {
         self.data_sync_retry
             .load(crate::sync::atomic::Ordering::SeqCst)
@@ -1375,9 +1495,27 @@ impl Connection {
             .store(value, crate::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Get the sync type setting.
+    pub fn get_sync_type(&self) -> crate::io::FileSyncType {
+        self.pager.load().get_sync_type()
+    }
+
+    /// Set the sync type (for PRAGMA fullfsync).
+    pub fn set_sync_type(&self, value: crate::io::FileSyncType) {
+        self.pager.load().set_sync_type(value);
+    }
+
     /// Creates a HashSet of modules that have been loaded
-    pub fn get_syms_vtab_mods(&self) -> std::collections::HashSet<String> {
+    pub fn get_syms_vtab_mods(&self) -> HashSet<String> {
         self.syms.read().vtab_modules.keys().cloned().collect()
+    }
+
+    pub(crate) fn syms_generation(&self) -> u64 {
+        self.syms_generation.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn database_ptr(&self) -> usize {
+        Arc::as_ptr(&self.db) as usize
     }
 
     pub fn set_encryption_key(&self, key: EncryptionKey) -> Result<()> {
@@ -1396,6 +1534,13 @@ impl Connection {
         let pager = self.pager.load();
         pager.set_reserved_space_bytes(reserved_bytes);
         Ok(())
+    }
+
+    /// Get the reserved bytes value from the pager cache.
+    /// Returns None if not yet set (database not initialized).
+    pub fn get_reserved_bytes(&self) -> Option<u8> {
+        let pager = self.pager.load();
+        pager.get_reserved_space()
     }
 
     pub fn get_encryption_cipher_mode(&self) -> Option<CipherMode> {
@@ -1477,7 +1622,9 @@ impl Connection {
         *self.mv_tx.read()
     }
 
+    #[inline(always)]
     pub(crate) fn set_mv_tx(&self, tx_id_and_mode: Option<(u64, TransactionMode)>) {
+        tracing::debug!("set_mv_tx: {:?}", tx_id_and_mode);
         *self.mv_tx.write() = tx_id_and_mode;
     }
 
@@ -1544,10 +1691,10 @@ pub fn resolve_ext_path(extpath: &str) -> Result<std::path::PathBuf> {
 impl SymbolTable {
     pub fn new() -> Self {
         Self {
-            functions: HashMap::new(),
-            vtabs: HashMap::new(),
-            vtab_modules: HashMap::new(),
-            index_methods: HashMap::new(),
+            functions: HashMap::default(),
+            vtabs: HashMap::default(),
+            vtab_modules: HashMap::default(),
+            index_methods: HashMap::default(),
         }
     }
     pub fn resolve_function(

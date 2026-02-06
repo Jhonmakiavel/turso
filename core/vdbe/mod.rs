@@ -25,12 +25,12 @@ pub mod explain;
 #[allow(dead_code)]
 pub mod hash_table;
 pub mod insn;
-pub mod likeop;
 pub mod metrics;
 pub mod rowset;
 pub mod sorter;
 pub mod value;
-
+// for benchmarks
+pub use crate::translate::collate::CollationSeq;
 use crate::{
     error::LimboError,
     function::{AggFunc, FuncCtx},
@@ -38,19 +38,19 @@ use crate::{
     return_if_io,
     schema::Trigger,
     state_machine::StateMachine,
-    storage::pager::PagerCommitResult,
-    translate::{collate::CollationSeq, plan::TableReferences},
+    translate::plan::TableReferences,
     types::{IOCompletions, IOResult},
     vdbe::{
         execute::{
             OpColumnState, OpDeleteState, OpDeleteSubState, OpDestroyState, OpIdxInsertState,
             OpInsertState, OpInsertSubState, OpJournalModeState, OpNewRowidState,
             OpNoConflictState, OpProgramState, OpRowIdState, OpSeekState, OpTransactionState,
+            OpVacuumIntoState,
         },
         hash_table::HashTable,
         metrics::StatementMetrics,
     },
-    ValueRef,
+    CipherMode, ValueRef,
 };
 
 use smallvec::SmallVec;
@@ -62,10 +62,13 @@ use crate::{
     vdbe::{builder::CursorType, insn::Insn},
 };
 
+use crate::connection::AttachedDatabasesFingerprint;
 #[cfg(feature = "json")]
 use crate::json::JsonCacheCell;
 use crate::sync::RwLock;
-use crate::{Connection, MvStore, Result, TransactionState};
+use crate::{
+    AtomicBool, CaptureDataChangesMode, Connection, MvStore, Result, SyncMode, TransactionState,
+};
 use branches::{mark_unlikely, unlikely};
 use builder::{CursorKey, QueryMode};
 use execute::{
@@ -77,10 +80,10 @@ use turso_parser::ast::ResolveType;
 use crate::vdbe::bloom_filter::BloomFilter;
 use crate::vdbe::rowset::RowSet;
 use explain::{insn_to_row_with_comment, EXPLAIN_COLUMNS, EXPLAIN_QUERY_PLAN_COLUMNS};
-use regex::Regex;
 use std::{
     collections::HashMap,
     num::NonZero,
+    ops::Deref,
     sync::{
         atomic::{AtomicI64, AtomicIsize, Ordering},
         Arc,
@@ -195,20 +198,6 @@ pub enum StepResult {
     Row,
     Interrupt,
     Busy,
-}
-
-struct RegexCache {
-    like: HashMap<String, Regex>,
-    glob: HashMap<String, Regex>,
-}
-
-impl RegexCache {
-    fn new() -> Self {
-        Self {
-            like: HashMap::new(),
-            glob: HashMap::new(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -330,6 +319,12 @@ pub struct OpHashProbeState {
     pub partition_idx: usize,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct DeferredSeekState {
+    pub index_cursor_id: CursorID,
+    pub table_cursor_id: CursorID,
+}
+
 /// The program state describes the environment in which the program executes.
 pub struct ProgramState {
     pub io_completions: Option<IOCompletions>,
@@ -339,13 +334,12 @@ pub struct ProgramState {
     registers: Box<[Register]>,
     pub(crate) result_row: Option<Row>,
     last_compare: Option<std::cmp::Ordering>,
-    deferred_seeks: Vec<Option<(CursorID, CursorID)>>,
+    deferred_seeks: Vec<Option<DeferredSeekState>>,
     /// Indicate whether a coroutine has ended for a given yield register.
     /// If an element is present, it means the coroutine with the given register number has ended.
     ended_coroutine: Vec<u32>,
     /// Indicate whether an [Insn::Once] instruction at a given program counter position has already been executed, well, once.
     once: SmallVec<[u32; 4]>,
-    regex_cache: RegexCache,
     pub execution_state: ProgramExecutionState,
     pub parameters: HashMap<NonZero<usize>, Value>,
     commit_state: CommitState,
@@ -370,6 +364,7 @@ pub struct ProgramState {
     op_row_id_state: OpRowIdState,
     op_transaction_state: OpTransactionState,
     op_journal_mode_state: OpJournalModeState,
+    op_vacuum_into_state: OpVacuumIntoState,
     /// State machine for committing view deltas with I/O handling
     view_delta_state: ViewDeltaCommitState,
     /// Marker which tells about auto transaction cleanup necessary for that connection in case of reset
@@ -390,10 +385,16 @@ pub struct ProgramState {
     pub(crate) bloom_filters: HashMap<usize, BloomFilter>,
     op_hash_build_state: Option<OpHashBuildState>,
     op_hash_probe_state: Option<OpHashProbeState>,
+    /// Scratch buffer for [Insn::HashDistinct] to avoid per-row allocations.
+    distinct_key_values: Vec<Value>,
     hash_tables: HashMap<usize, HashTable>,
     uses_subjournal: bool,
     pub n_change: AtomicI64,
     pub explain_state: RwLock<ExplainState>,
+    /// Pending error to return after FAIL mode commit completes.
+    /// When a constraint error occurs with FAIL resolve type in autocommit mode,
+    /// we need to commit partial changes before returning the error.
+    pub(crate) pending_fail_error: Option<LimboError>,
 }
 
 impl std::fmt::Debug for Program {
@@ -427,9 +428,8 @@ impl ProgramState {
             deferred_seeks: vec![None; max_cursors],
             ended_coroutine: vec![],
             once: SmallVec::<[u32; 4]>::new(),
-            regex_cache: RegexCache::new(),
             execution_state: ProgramExecutionState::Init,
-            parameters: HashMap::new(),
+            parameters: HashMap::default(),
             commit_state: CommitState::Ready,
             #[cfg(feature = "json")]
             json_cache: JsonCacheCell::new(),
@@ -452,22 +452,25 @@ impl ProgramState {
             op_no_conflict_state: OpNoConflictState::Start,
             op_hash_build_state: None,
             op_hash_probe_state: None,
+            distinct_key_values: Vec::new(),
             seek_state: OpSeekState::Start,
             current_collation: None,
             op_column_state: OpColumnState::Start,
             op_row_id_state: OpRowIdState::Start,
             op_transaction_state: OpTransactionState::Start,
             op_journal_mode_state: OpJournalModeState::default(),
+            op_vacuum_into_state: OpVacuumIntoState::default(),
             view_delta_state: ViewDeltaCommitState::NotStarted,
             auto_txn_cleanup: TxnCleanup::None,
             fk_deferred_violations_when_stmt_started: AtomicIsize::new(0),
             fk_immediate_violations_during_stmt: AtomicIsize::new(0),
-            rowsets: HashMap::new(),
-            bloom_filters: HashMap::new(),
-            hash_tables: HashMap::new(),
+            rowsets: HashMap::default(),
+            bloom_filters: HashMap::default(),
+            hash_tables: HashMap::default(),
             uses_subjournal: false,
             n_change: AtomicI64::new(0),
             explain_state: RwLock::new(ExplainState::default()),
+            pending_fail_error: None,
         }
     }
 
@@ -530,7 +533,6 @@ impl ProgramState {
         self.deferred_seeks.iter_mut().for_each(|s| *s = None);
         self.ended_coroutine.clear();
         self.once.clear();
-        self.regex_cache.like.clear();
         self.execution_state = ProgramExecutionState::Init;
         self.current_collation = None;
         #[cfg(feature = "json")]
@@ -567,6 +569,7 @@ impl ProgramState {
         self.hash_tables.clear();
         self.op_hash_build_state = None;
         self.op_hash_probe_state = None;
+        self.distinct_key_values.clear();
         self.n_change.store(0, Ordering::SeqCst);
         *self.explain_state.write() = ExplainState::default();
     }
@@ -587,15 +590,23 @@ impl ProgramState {
         write: bool,
     ) -> Result<IOResult<()>> {
         if write {
-            let db_size = return_if_io!(pager.with_header(|header| header.database_size.get()));
-            pager.open_subjournal()?;
-            pager.try_use_subjournal()?;
-            let result = pager.open_savepoint(db_size);
-            if result.is_err() {
-                pager.stop_use_subjournal();
+            // Check if MVCC is active - if so, use MVCC savepoints instead of pager savepoints
+            if let Some(mv_store) = connection.mv_store().as_ref() {
+                if let Some(tx_id) = connection.get_mv_tx_id() {
+                    mv_store.begin_savepoint(tx_id);
+                }
+            } else {
+                // Non-MVCC mode: use pager savepoints
+                let db_size = return_if_io!(pager.with_header(|header| header.database_size.get()));
+                pager.open_subjournal()?;
+                pager.try_use_subjournal()?;
+                let result = pager.open_savepoint(db_size);
+                if result.is_err() {
+                    pager.stop_use_subjournal();
+                }
+                result?;
+                self.uses_subjournal = true;
             }
-            result?;
-            self.uses_subjournal = true;
         }
 
         // Store the deferred foreign key violations counter at the start of the statement.
@@ -620,14 +631,32 @@ impl ProgramState {
     ) -> Result<()> {
         let result = 'outer: {
             match end_statement {
-                EndStatement::ReleaseSavepoint => pager.release_savepoint(),
+                EndStatement::ReleaseSavepoint => {
+                    if let Some(mv_store) = connection.mv_store().as_ref() {
+                        if let Some(tx_id) = connection.get_mv_tx_id() {
+                            mv_store.release_savepoint(tx_id);
+                        }
+                        Ok(()) // MVCC mode: no pager savepoint to release
+                    } else {
+                        pager.release_savepoint()
+                    }
+                }
                 EndStatement::RollbackSavepoint => {
-                    match pager.rollback_to_newest_savepoint() {
-                        // We sometimes call end_statement() on errors without explicitly knowing whether a stmt transaction
-                        // caused the error or not. If it didn't, don't reset any FK violation counters.
-                        Ok(false) => break 'outer Ok(()),
-                        Err(err) => break 'outer Err(err),
-                        _ => {}
+                    if let Some(mv_store) = connection.mv_store().as_ref() {
+                        if let Some(tx_id) = connection.get_mv_tx_id() {
+                            // Returns false if no savepoint was active - don't reset FK counters
+                            if !mv_store.rollback_first_savepoint(tx_id)? {
+                                break 'outer Ok(());
+                            }
+                        }
+                    } else {
+                        match pager.rollback_to_newest_savepoint() {
+                            // We sometimes call end_statement() on errors without explicitly knowing whether a stmt transaction
+                            // caused the error or not. If it didn't, don't reset any FK violation counters.
+                            Ok(false) => break 'outer Ok(()),
+                            Err(err) => break 'outer Err(err),
+                            _ => {}
+                        }
                     }
                     // Reset the deferred foreign key violations counter to the value it had at the start of the statement.
                     // This is used to ensure that if an interactive transaction had deferred FK violations, they are not lost.
@@ -751,7 +780,7 @@ pub struct ExplainState {
 }
 
 #[derive(Clone)]
-pub struct Program {
+pub struct PreparedProgram {
     pub max_registers: usize,
     // we store original indices because we don't want to create new vec from
     // ProgramBuilder
@@ -759,19 +788,14 @@ pub struct Program {
     pub cursor_ref: Vec<(Option<CursorKey>, CursorType)>,
     pub comments: Vec<(InsnReference, &'static str)>,
     pub parameters: crate::parameters::Parameters,
-    pub connection: Arc<Connection>,
     pub change_cnt_on: bool,
     pub result_columns: Vec<ResultSetColumn>,
     pub table_references: TableReferences,
     pub sql: String,
-    /// Whether the program accesses the database.
-    /// Used to determine whether we need to check for schema changes when
-    /// starting a transaction.
-    pub accesses_db: bool,
     /// In SQLite, whether statement subtransactions will be used for executing a program (`usesStmtJournal`)
     /// is determined by the parser flags "mayAbort" and "isMultiWrite". Essentially this means that the individual
     /// statement may need to be aborted due to a constraint conflict, etc. instead of the entire transaction.
-    pub needs_stmt_subtransactions: bool,
+    pub needs_stmt_subtransactions: Arc<AtomicBool>,
     /// If this Program is a trigger subprogram, a ref to the trigger is stored here.
     pub trigger: Option<Arc<Trigger>>,
     /// Whether this program is a subprogram (trigger or FK action) that runs within a parent statement.
@@ -779,6 +803,106 @@ pub struct Program {
     /// Whether the program contains any trigger subprograms.
     pub contains_trigger_subprograms: bool,
     pub resolve_type: ResolveType,
+    pub prepare_context: PrepareContext,
+}
+
+#[derive(Clone)]
+pub struct Program {
+    pub(crate) prepared: Arc<PreparedProgram>,
+    pub connection: Arc<Connection>,
+}
+
+/// Captures connection settings at statement preparation time for cache invalidation.
+///
+/// This struct is used to detect when a cached prepared statement needs to be recompiled
+/// because relevant connection settings have changed. When `matches_connection()` returns
+/// false, the statement will be automatically reprepared before execution.
+///
+/// # Adding New Fields
+///
+/// If you add a new setting to `Connection` that affects statement compilation or execution,
+/// you MUST add a corresponding field here and update `from_connection()`. See the doc
+/// comment on `Connection` in `connection.rs` for the authoritative list of tracked fields.
+///
+/// Fields that affect compilation include (but are not limited to):
+/// - PRAGMA settings that change query semantics (foreign_keys, query_only, etc.)
+/// - Registered functions/virtual tables (tracked via syms_generation)
+/// - Attached databases (tracked via fingerprint)
+/// - Storage settings (page_size, cache_size, encryption, sync_mode, etc.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrepareContext {
+    database_ptr: usize,
+    foreign_keys: bool,
+    query_only: bool,
+    capture_data_changes: CaptureDataChangesMode,
+    syms_generation: u64,
+    attached_databases_fingerprint: AttachedDatabasesFingerprint,
+    busy_timeout_ms: u64,
+    cache_size: i32,
+    spill_enabled: bool,
+    page_size: u32,
+    sync_mode: SyncMode,
+    data_sync_retry: bool,
+    encryption_key_set: bool,
+    encryption_cipher: CipherMode,
+    mvcc_checkpoint_threshold: Option<i64>,
+}
+
+impl PrepareContext {
+    pub fn from_connection(connection: &Connection) -> Self {
+        let pager = connection.get_pager();
+        Self {
+            database_ptr: connection.database_ptr(),
+            foreign_keys: connection.foreign_keys_enabled(),
+            query_only: connection.get_query_only(),
+            capture_data_changes: connection.get_capture_data_changes().clone(),
+            syms_generation: connection.syms_generation(),
+            attached_databases_fingerprint: connection.attached_databases_fingerprint(),
+            busy_timeout_ms: connection.get_busy_timeout().as_millis() as u64,
+            cache_size: connection.get_cache_size(),
+            spill_enabled: pager.get_spill_enabled(),
+            page_size: connection.get_page_size().get(),
+            sync_mode: connection.get_sync_mode(),
+            data_sync_retry: connection.get_data_sync_retry(),
+            encryption_key_set: connection.encryption_key.read().is_some(),
+            encryption_cipher: connection.encryption_cipher_mode.get(),
+            mvcc_checkpoint_threshold: connection
+                .db
+                .mvcc_enabled()
+                .then(|| connection.mvcc_checkpoint_threshold())
+                .and_then(|res| res.ok()),
+        }
+    }
+
+    pub fn matches_connection(&self, connection: &Connection) -> bool {
+        self == &Self::from_connection(connection)
+    }
+}
+
+impl PreparedProgram {
+    pub fn bind(self: Arc<Self>, connection: Arc<Connection>) -> Program {
+        Program {
+            prepared: self,
+            connection,
+        }
+    }
+
+    pub fn is_compatible_with(&self, connection: &Connection) -> bool {
+        self.prepare_context.matches_connection(connection)
+    }
+}
+
+impl Program {
+    pub fn prepared(&self) -> &Arc<PreparedProgram> {
+        &self.prepared
+    }
+
+    pub fn from_prepared(prepared: Arc<PreparedProgram>, connection: Arc<Connection>) -> Self {
+        Self {
+            prepared,
+            connection,
+        }
+    }
 }
 
 impl Program {
@@ -1024,7 +1148,7 @@ impl Program {
                 return Err(LimboError::InternalError("Connection closed".to_string()));
             }
             if matches!(state.execution_state, ProgramExecutionState::Interrupting) {
-                self.abort(&pager, None, state);
+                self.abort(&pager, None, state)?;
                 return Ok(StepResult::Interrupt);
             }
 
@@ -1042,11 +1166,17 @@ impl Program {
                         // the write itself succeeded.
                         let checkpoint_err = LimboError::CheckpointFailed(err.to_string());
                         tracing::error!("Checkpoint failed: {checkpoint_err}");
-                        self.abort(&pager, Some(&checkpoint_err), state);
+                        if let Err(abort_err) = self.abort(&pager, Some(&checkpoint_err), state) {
+                            tracing::error!(
+                                "Abort also failed during checkpoint error handling: {abort_err}"
+                            );
+                        }
                         return Err(checkpoint_err);
                     }
                     let err = err.into();
-                    self.abort(&pager, Some(&err), state);
+                    if let Err(abort_err) = self.abort(&pager, Some(&err), state) {
+                        tracing::error!("Abort failed during error handling: {abort_err}");
+                    }
                     return Err(err);
                 }
                 state.io_completions = None;
@@ -1097,7 +1227,9 @@ impl Program {
                     return Ok(StepResult::Busy);
                 }
                 Err(err) => {
-                    self.abort(&pager, Some(&err), state);
+                    if let Err(abort_err) = self.abort(&pager, Some(&err), state) {
+                        tracing::error!("Abort failed during error handling: {abort_err}");
+                    }
                     return Err(err);
                 }
             }
@@ -1223,8 +1355,7 @@ impl Program {
         // Reset state for next use
         program_state.view_delta_state = ViewDeltaCommitState::NotStarted;
         if self.connection.get_tx_state() == TransactionState::None {
-            // No need to do any work here if not in tx. Current MVCC logic doesn't work with this assumption,
-            // hence the mv_store.is_none() check.
+            // No need to do any work here if not in tx
             return Ok(IOResult::Done(()));
         }
         if self.connection.is_nested_stmt() {
@@ -1250,34 +1381,32 @@ impl Program {
                 match self.step_end_mvcc_txn(state_machine, mv_store)? {
                     IOResult::Done(_) => {
                         assert!(state_machine.is_finalized());
-                        *conn.mv_tx.write() = None;
+                        conn.set_mv_tx(None);
                         conn.set_tx_state(TransactionState::None);
                         program_state.commit_state = CommitState::Ready;
                         return Ok(IOResult::Done(()));
                     }
-                    IOResult::IO(io) => {
-                        return Ok(IOResult::IO(io));
-                    }
+                    IOResult::IO(io) => return Ok(IOResult::IO(io)),
                 }
             }
             Ok(IOResult::Done(()))
         } else {
             let connection = self.connection.clone();
             let auto_commit = connection.auto_commit.load(Ordering::SeqCst);
+            let tx_state = connection.get_tx_state();
             tracing::debug!(
-                "Halt auto_commit {}, state={:?}",
+                "Halt auto_commit {}, commit_state={:?}, tx_state={:?}",
                 auto_commit,
-                program_state.commit_state
+                program_state.commit_state,
+                tx_state,
             );
             if matches!(program_state.commit_state, CommitState::Committing) {
-                let TransactionState::Write { .. } = connection.get_tx_state() else {
+                let TransactionState::Write { .. } = tx_state else {
                     unreachable!("invalid state for write commit step")
                 };
                 self.step_end_write_txn(&pager, &connection, program_state, rollback)
             } else if auto_commit {
-                let current_state = connection.get_tx_state();
-                tracing::trace!("Auto-commit state: {:?}", current_state);
-                match current_state {
+                match tx_state {
                     TransactionState::Write { .. } => {
                         self.step_end_write_txn(&pager, &connection, program_state, rollback)
                     }
@@ -1287,8 +1416,8 @@ impl Program {
                         Ok(IOResult::Done(()))
                     }
                     TransactionState::None => Ok(IOResult::Done(())),
-                    TransactionState::PendingUpgrade => {
-                        panic!("Unexpected transaction state: {current_state:?} during auto-commit",)
+                    TransactionState::PendingUpgrade { .. } => {
+                        panic!("Unexpected transaction state: {tx_state:?} during auto-commit",)
                     }
                 }
             } else {
@@ -1310,41 +1439,19 @@ impl Program {
         rollback: bool,
     ) -> Result<IOResult<()>> {
         let commit_state = &mut program_state.commit_state;
-        let cacheflush_status = if !rollback {
-            match pager.commit_tx(connection) {
-                Ok(status) => status,
-                Err(LimboError::CheckpointFailed(msg)) => {
-                    // CheckpointFailed means the WAL commit succeeded but autocheckpoint failed.
-                    // The transaction is durable - clean up transaction state and propagate the error.
-                    tracing::warn!("Commit succeeded but autocheckpoint failed: {}", msg);
-                    if self.change_cnt_on {
-                        self.connection
-                            .set_changes(program_state.n_change.load(Ordering::SeqCst));
-                    }
-                    // Update global schema if this was a DDL transaction.
-                    // Must be done before clearing TX state, otherwise abort() won't know
-                    // to update the schema.
-                    if connection.get_tx_state().is_ddl_write_tx() {
-                        let schema = connection.schema.read().clone();
-                        connection.db.update_schema_if_newer(schema);
-                    }
-                    connection.set_tx_state(TransactionState::None);
-                    *commit_state = CommitState::Ready;
-                    return Err(LimboError::CheckpointFailed(msg));
-                }
-                Err(e) => return Err(e),
-            }
+        let txn_finish_result = if !rollback {
+            pager.commit_tx(connection, true)
         } else {
             pager.rollback_tx(connection);
-            IOResult::Done(PagerCommitResult::Rollback)
+            Ok(IOResult::Done(()))
         };
-        match cacheflush_status {
+        tracing::debug!("txn_finish_result: {:?}", txn_finish_result);
+        match txn_finish_result? {
             IOResult::Done(_) => {
                 if self.change_cnt_on {
                     self.connection
                         .set_changes(program_state.n_change.load(Ordering::SeqCst));
                 }
-                connection.set_tx_state(TransactionState::None);
                 *commit_state = CommitState::Ready;
             }
             IOResult::IO(io) => {
@@ -1367,18 +1474,30 @@ impl Program {
 
     /// Aborts the program due to various conditions (explicit error, interrupt or reset of unfinished statement) by rolling back the transaction
     /// This method is no-op if program was already finished (either aborted or executed to completion)
-    pub fn abort(&self, pager: &Arc<Pager>, err: Option<&LimboError>, state: &mut ProgramState) {
+    /// Returns an error if cleanup operations (savepoint rollback/release) fail.
+    pub fn abort(
+        &self,
+        pager: &Arc<Pager>,
+        err: Option<&LimboError>,
+        state: &mut ProgramState,
+    ) -> Result<()> {
         if self.is_trigger_subprogram() {
             self.connection.end_trigger_execution();
         }
         // Errors from nested statements are handled by the parent statement.
         if !self.connection.is_nested_stmt() && !self.is_trigger_subprogram() {
             if err.is_some() && !pager.is_checkpointing() {
-                // Any error apart from deferred FK violations and checkpoint failures causes the statement subtransaction to roll back.
-                let res =
-                    state.end_statement(&self.connection, pager, EndStatement::RollbackSavepoint);
-                if let Err(e) = res {
-                    tracing::error!("Error rolling back statement: {}", e);
+                // For FAIL resolve type with non-FK constraint errors, do NOT rollback the statement
+                // savepoint - changes made by the statement prior to the error should persist.
+                // For all other resolve types (ABORT, ROLLBACK, etc.), rollback the statement.
+                let should_rollback_stmt = !(self.resolve_type == ResolveType::Fail
+                    && matches!(err, Some(LimboError::Constraint(_))));
+                if should_rollback_stmt {
+                    state.end_statement(
+                        &self.connection,
+                        pager,
+                        EndStatement::RollbackSavepoint,
+                    )?;
                 }
             }
             match err {
@@ -1396,25 +1515,43 @@ impl Program {
                 // Schema updated errors do not cause a rollback; the statement will be reprepared and retried,
                 // and the caller is expected to handle transaction cleanup explicitly if needed.
                 Some(LimboError::SchemaUpdated) => {}
-                // CheckpointFailed means the WAL commit succeeded but autocheckpoint failed.
-                // The transaction is already committed and durable, so no rollback is needed.
-                // Clean up the WAL write/read transactions that would normally be cleaned up in commit_tx().
-                Some(LimboError::CheckpointFailed(_)) => {
-                    pager.finish_commit_after_checkpoint_failure();
-                    // If a checkpoint failed, that doesn't mean the transaction is not committed;
-                    // hence: if there were schema changes, we need to update the global schema.
-                    if self.connection.get_tx_state().is_ddl_write_tx() {
-                        let schema = self.connection.schema.read().clone();
-                        self.connection.db.update_schema_if_newer(schema);
-                    }
-                    self.connection.set_tx_state(TransactionState::None);
-                }
-                // Constraint errors do not cause a rollback of the transaction for interacative transactions;
-                // Instead individual statement subtransactions will roll back
-                // In the auto-commit mode - we rollback current active transaction
-                Some(LimboError::Constraint(_)) => {
+                // Foreign key constraint errors: ON CONFLICT does NOT apply to FK violations.
+                // FK errors always behave like ABORT: rollback statement,
+                // rollback transaction in autocommit mode.
+                Some(LimboError::ForeignKeyConstraint(_)) => {
                     if self.connection.get_auto_commit() {
                         self.rollback_current_txn(pager);
+                    }
+                }
+                // Non-FK constraint errors: behavior depends on resolve_type
+                // - ROLLBACK: rollback the entire transaction regardless of autocommit mode
+                // - FAIL: don't rollback anything - changes persist, transaction stays active
+                Some(LimboError::Constraint(_)) => {
+                    match self.resolve_type {
+                        ResolveType::Rollback => {
+                            // ROLLBACK always rolls back the entire transaction
+                            self.rollback_current_txn(pager);
+                        }
+                        ResolveType::Fail => {
+                            // FAIL: Don't rollback the transaction. Changes made before the error persist.
+                            // For autocommit mode, the commit was already handled in halt() before
+                            // the error was returned, so nothing more to do here.
+                            // For non-autocommit mode, release the savepoint so changes become part
+                            // of the outer transaction.
+                            if !self.connection.get_auto_commit() {
+                                state.end_statement(
+                                    &self.connection,
+                                    pager,
+                                    EndStatement::ReleaseSavepoint,
+                                )?;
+                            }
+                        }
+                        _ => {
+                            if self.connection.get_auto_commit() {
+                                // ABORT in autocommit: rollback the implicit transaction
+                                self.rollback_current_txn(pager);
+                            }
+                        }
                     }
                 }
                 _ => {
@@ -1425,6 +1562,7 @@ impl Program {
             }
         }
         state.auto_txn_cleanup = TxnCleanup::None;
+        Ok(())
     }
 
     fn rollback_current_txn(&self, pager: &Arc<Pager>) {
@@ -1445,7 +1583,19 @@ impl Program {
     }
 }
 
-fn make_record(registers: &[Register], start_reg: &usize, count: &usize) -> ImmutableRecord {
+impl Deref for Program {
+    type Target = PreparedProgram;
+
+    fn deref(&self) -> &PreparedProgram {
+        &self.prepared
+    }
+}
+
+pub(crate) fn make_record(
+    registers: &[Register],
+    start_reg: &usize,
+    count: &usize,
+) -> ImmutableRecord {
     let regs = &registers[*start_reg..*start_reg + *count];
     ImmutableRecord::from_registers(regs, regs.len())
 }

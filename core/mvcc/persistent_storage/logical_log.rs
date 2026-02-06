@@ -1,5 +1,6 @@
 // FIXME: remove this once we add recovery
 #![allow(dead_code)]
+use crate::io::FileSyncType;
 use crate::sync::Arc;
 use crate::sync::RwLock;
 use crate::{
@@ -13,7 +14,9 @@ use crate::{
 
 use crate::File;
 
-pub const DEFAULT_LOG_CHECKPOINT_THRESHOLD: i64 = -1; // Disabled by default
+/// Logical log size in bytes at which a committing transaction will trigger a checkpoint.
+/// Default to the size of 1000 SQLite WAL frames; disable by setting a negative value.
+pub const DEFAULT_LOG_CHECKPOINT_THRESHOLD: i64 = 4120 * 1000;
 
 pub struct LogicalLog {
     pub file: Arc<dyn File>,
@@ -218,11 +221,11 @@ impl LogicalLog {
         Ok(c)
     }
 
-    pub fn sync(&mut self) -> Result<Completion> {
+    pub fn sync(&mut self, sync_type: FileSyncType) -> Result<Completion> {
         let completion = Completion::new_sync(move |_| {
             tracing::debug!("logical_log_sync finish");
         });
-        let c = self.file.sync(completion)?;
+        let c = self.file.sync(completion, sync_type)?;
         Ok(c)
     }
 
@@ -307,7 +310,7 @@ impl StreamingLogicalLogReader {
             let mut header = header.write();
             let Ok((buf, bytes_read)) = res else {
                 tracing::error!("couldn't ready log err={:?}", res,);
-                return;
+                return None;
             };
             if bytes_read != LOG_HEADER_MAX_SIZE as i32 {
                 tracing::error!(
@@ -315,7 +318,7 @@ impl StreamingLogicalLogReader {
                     bytes_read,
                     LOG_HEADER_MAX_SIZE
                 );
-                return;
+                return None;
             }
             let buf = buf.as_slice();
             header.version = buf[0];
@@ -324,6 +327,7 @@ impl StreamingLogicalLogReader {
             ]);
             header.encrypted = buf[9];
             tracing::trace!("LogicalLog header={:?}", header);
+            None
         });
         let c = Completion::new_read(header_buf, completion);
         self.offset += LOG_HEADER_MAX_SIZE;
@@ -610,6 +614,7 @@ impl StreamingLogicalLogReader {
                 if bytes_read > 0 {
                     buffer.extend_from_slice(&buf[..bytes_read as usize]);
                 }
+                None
             });
             let c = Completion::new_read(header_buf, completion);
             let c = self.file.pread(self.offset as u64, c)?;

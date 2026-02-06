@@ -1,4 +1,5 @@
 use crate::io::clock::{DefaultClock, MonotonicInstant, WallClockInstant};
+use crate::io::FileSyncType;
 use crate::{Clock, Completion, File, LimboError, OpenFlags, Result, IO};
 use crate::sync::RwLock;
 use std::io::{Read, Seek, Write};
@@ -76,8 +77,7 @@ impl File for WindowsFile {
             let r = c.as_read();
             let buf = r.buf();
             let buf = buf.as_mut_slice();
-            file.read_exact(buf)?;
-            buf.len() as i32
+            file.read(buf)? as i32
         };
         c.complete(nr);
         Ok(c)
@@ -94,7 +94,7 @@ impl File for WindowsFile {
     }
 
     #[instrument(err, skip_all, level = Level::TRACE)]
-    fn sync(&self, c: Completion) -> Result<Completion> {
+    fn sync(&self, c: Completion, _sync_type: FileSyncType) -> Result<Completion> {
         let file = self.file.write();
         file.sync_all()?;
         c.complete(0);

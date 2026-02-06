@@ -14,10 +14,8 @@ use crate::{
     LimboError, OpenFlags, Result, Statement, SymbolTable,
 };
 use either::Either;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::sync::Arc;
 use tracing::{instrument, Level};
 use turso_macros::match_ignore_ascii_case;
 use turso_parser::ast::{self, CreateTableBody, Expr, Literal, UnaryOperator};
@@ -135,17 +133,14 @@ pub fn parse_schema_rows(
     // TODO: if we IO, this unparsed indexes is lost. Will probably need some state between
     // IO runs
     let mut from_sql_indexes = Vec::with_capacity(10);
-    let mut automatic_indices = std::collections::HashMap::with_capacity(10);
+    let mut automatic_indices = HashMap::with_capacity_and_hasher(10, Default::default());
 
     // Store DBSP state table root pages: view_name -> dbsp_state_root_page
-    let mut dbsp_state_roots: std::collections::HashMap<String, i64> =
-        std::collections::HashMap::new();
+    let mut dbsp_state_roots: HashMap<String, i64> = HashMap::default();
     // Store DBSP state table index root pages: view_name -> dbsp_state_index_root_page
-    let mut dbsp_state_index_roots: std::collections::HashMap<String, i64> =
-        std::collections::HashMap::new();
+    let mut dbsp_state_index_roots: HashMap<String, i64> = HashMap::default();
     // Store materialized view info (SQL and root page) for later creation
-    let mut materialized_view_info: std::collections::HashMap<String, (String, i64)> =
-        std::collections::HashMap::new();
+    let mut materialized_view_info: HashMap<String, (String, i64)> = HashMap::default();
 
     // TODO: How do we ensure that the I/O we submitted to
     // read the schema is actually complete?
@@ -201,8 +196,10 @@ fn cmp_numeric_strings(num_str: &str, other: &str) -> bool {
     match (parse(num_str), parse(other)) {
         (Some(Either::Left(i1)), Some(Either::Left(i2))) => i1 == i2,
         (Some(Either::Right(f1)), Some(Either::Right(f2))) => f1 == f2,
-        (Some(Either::Left(i)), Some(Either::Right(f)))
-        | (Some(Either::Right(f)), Some(Either::Left(i))) => (i as f64) == f,
+        // Integer and Float are NOT equivalent even if values match,
+        // because result type of operations depends on operand types
+        (Some(Either::Left(_)), Some(Either::Right(_)))
+        | (Some(Either::Right(_)), Some(Either::Left(_))) => false,
         _ => num_str == other,
     }
 }
@@ -413,7 +410,7 @@ pub fn try_substitute_parameters(
 }
 
 pub fn try_capture_parameters(pattern: &Expr, query: &Expr) -> Option<HashMap<i32, Expr>> {
-    let mut captured = HashMap::new();
+    let mut captured = HashMap::default();
     match (pattern, query) {
         (
             Expr::FunctionCall {
@@ -561,7 +558,7 @@ pub fn try_capture_parameters_column_agnostic(
         return None;
     }
 
-    let mut captured = HashMap::new();
+    let mut captured = HashMap::default();
 
     // Split args into column args (reorderable) and remaining args (positional)
     let pattern_col_args = &pattern_args[..num_column_args];
@@ -571,7 +568,7 @@ pub fn try_capture_parameters_column_agnostic(
 
     // For column arguments: check that the same set of columns is used (order-independent)
     // We use a greedy matching approach: for each query column, find a matching pattern column
-    let mut matched_pattern_indices: HashSet<usize> = HashSet::new();
+    let mut matched_pattern_indices: HashSet<usize> = HashSet::default();
 
     for query_col in query_col_args {
         let mut found_match = false;
@@ -1366,7 +1363,7 @@ pub fn extract_view_columns(
 ) -> Result<ViewColumnSchema> {
     let mut tables = Vec::new();
     let mut columns = Vec::new();
-    let mut column_name_counts: HashMap<String, usize> = HashMap::new();
+    let mut column_name_counts: HashMap<String, usize> = HashMap::default();
 
     // Navigate to the first SELECT in the statement
     if let ast::OneSelect::Select {
@@ -1681,17 +1678,31 @@ pub mod tests {
 
     #[test]
     fn test_addition_expressions_equivalent_normalized() {
+        // Same types: 123.0 + 243.0 == 243.0 + 123.0 (commutative)
         let expr1 = Expr::Binary(
             Box::new(Expr::Literal(Literal::Numeric("123.0".to_string()))),
             Add,
-            Box::new(Expr::Literal(Literal::Numeric("243".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("243.0".to_string()))),
         );
         let expr2 = Expr::Binary(
             Box::new(Expr::Literal(Literal::Numeric("243.0".to_string()))),
             Add,
-            Box::new(Expr::Literal(Literal::Numeric("123".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("123.0".to_string()))),
         );
         assert!(exprs_are_equivalent(&expr1, &expr2));
+
+        // Mixed types are NOT equivalent (different result types)
+        let expr3 = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Numeric("123.0".to_string()))),
+            Add,
+            Box::new(Expr::Literal(Literal::Numeric("243".to_string()))),
+        );
+        let expr4 = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Numeric("243.0".to_string()))),
+            Add,
+            Box::new(Expr::Literal(Literal::Numeric("123".to_string()))),
+        );
+        assert!(!exprs_are_equivalent(&expr3, &expr4));
     }
 
     #[test]
@@ -1711,17 +1722,31 @@ pub mod tests {
 
     #[test]
     fn test_subtraction_expressions_normalized() {
+        // Same types: 66.0 - 22.0 == 66.0 - 22.0
         let expr3 = Expr::Binary(
             Box::new(Expr::Literal(Literal::Numeric("66.0".to_string()))),
             Subtract,
-            Box::new(Expr::Literal(Literal::Numeric("22".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("22.0".to_string()))),
         );
         let expr4 = Expr::Binary(
-            Box::new(Expr::Literal(Literal::Numeric("66".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("66.0".to_string()))),
             Subtract,
             Box::new(Expr::Literal(Literal::Numeric("22.0".to_string()))),
         );
         assert!(exprs_are_equivalent(&expr3, &expr4));
+
+        // Mixed types are NOT equivalent
+        let expr5 = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Numeric("66.0".to_string()))),
+            Subtract,
+            Box::new(Expr::Literal(Literal::Numeric("22".to_string()))),
+        );
+        let expr6 = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Numeric("66".to_string()))),
+            Subtract,
+            Box::new(Expr::Literal(Literal::Numeric("22.0".to_string()))),
+        );
+        assert!(!exprs_are_equivalent(&expr5, &expr6));
     }
 
     #[test]
@@ -1788,25 +1813,27 @@ pub mod tests {
 
     #[test]
     fn test_expressions_equivalent_multiplication() {
+        // Same types: 42.0 * 38.0 == 38.0 * 42.0 (commutative)
         let expr1 = Expr::Binary(
             Box::new(Expr::Literal(Literal::Numeric("42.0".to_string()))),
             Multiply,
-            Box::new(Expr::Literal(Literal::Numeric("38".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("38.0".to_string()))),
         );
         let expr2 = Expr::Binary(
             Box::new(Expr::Literal(Literal::Numeric("38.0".to_string()))),
             Multiply,
-            Box::new(Expr::Literal(Literal::Numeric("42".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("42.0".to_string()))),
         );
         assert!(exprs_are_equivalent(&expr1, &expr2));
     }
 
     #[test]
     fn test_expressions_both_parenthesized_equivalent() {
+        // Same types: (683 + 799) == 799 + 683 (commutative, integers only)
         let expr1 = Expr::Parenthesized(vec![Expr::Binary(
             Box::new(Expr::Literal(Literal::Numeric("683".to_string()))),
             Add,
-            Box::new(Expr::Literal(Literal::Numeric("799.0".to_string()))),
+            Box::new(Expr::Literal(Literal::Numeric("799".to_string()))),
         )
         .into()]);
         let expr2 = Expr::Binary(

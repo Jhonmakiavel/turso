@@ -59,7 +59,7 @@ uv-sync-test:
 	uv sync --all-extras --dev --package turso_test
 .PHONE: uv-sync
 
-test: build uv-sync-test test-compat test-sqlite3 test-shell test-memory test-write test-update test-constraint test-collate test-extensions test-mvcc test-matviews test-json
+test: build uv-sync-test test-compat test-sqlite3 test-shell test-memory test-write test-update test-constraint test-collate test-extensions test-mvcc
 .PHONY: test
 
 test-extensions: build uv-sync-test
@@ -71,28 +71,19 @@ test-shell: build uv-sync-test
 .PHONY: test-shell
 
 test-compat: check-tcl-version
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/all.test
+	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/system/all.test
 
 test-compat-mvcc: check-tcl-version
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=scripts/turso-mvcc-sqlite3 ./testing/all-mvcc.test
+	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=scripts/turso-mvcc-sqlite3 ./testing/system/all-mvcc.test
 
 test-single: check-tcl-version
 	@if [ -z "$(TEST)" ]; then \
 		echo "Usage: make test-single TEST=path/to/test.test"; \
 		exit 1; \
 	fi
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/$(TEST)
+	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/system/$(TEST)
 .PHONY: test-single
 .PHONY: test-compat
-
-test-time:
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/time.test
-.PHONY: test-time
-
-test-matviews:
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/materialized_views.test
-.PHONY: test-matviews
-
 
 reset-db:
 	./scripts/clone_test_db.sh
@@ -103,11 +94,6 @@ test-sqlite3: reset-db
 	./scripts/clone_test_db.sh
 	cargo test -p turso_sqlite3 --test compat --features sqlite3 -- --test-threads=1
 .PHONY: test-sqlite3
-
-test-json:
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/json.test
-	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) ./testing/json_object_star.test
-.PHONY: test-json
 
 test-memory: build uv-sync-test
 	RUST_LOG=$(RUST_LOG) SQLITE_EXEC=$(SQLITE_EXEC) uv run --project limbo_test test-memory
@@ -168,7 +154,7 @@ bench-exclude-tpc-h:
 		echo "No benchmarks found (excluding tpc_h_benchmark)."; \
 		exit 1; \
 	else \
-		cargo bench $$benchmarks; \
+		cargo bench $$benchmarks --features bench; \
 	fi
 .PHONY: bench-exclude-tpc-h
 

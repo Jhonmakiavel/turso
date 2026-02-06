@@ -1,29 +1,28 @@
-use turso_parser::ast::{fmt::ToTokens, Expr, SortOrder};
+use turso_parser::ast::{Expr, SortOrder};
 
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use super::{
     aggregation::{translate_aggregation_step, AggArgumentSource},
-    display::PlanContext,
     emitter::{
         MaterializedBuildInputMode, MaterializedColumnRef, OperationMode, TranslateCtx,
         UpdateRowSource,
     },
     expr::{
-        translate_condition_expr, translate_expr, translate_expr_no_constant_opt,
-        ConditionMetadata, NoConstantOptReason,
+        translate_condition_expr, translate_expr, translate_expr_no_constant_opt, walk_expr,
+        ConditionMetadata, NoConstantOptReason, WalkControl,
     },
     group_by::{group_by_agg_phase, GroupByMetadata, GroupByRowSource},
     optimizer::Optimizable,
     order_by::{order_by_sorter_insert, sorter_insert},
     plan::{
-        Aggregate, DistinctCtx, Distinctness, EvalAt, GroupBy, HashJoinOp, IterationDirection,
+        Aggregate, DistinctCtx, Distinctness, EvalAt, HashJoinOp, IterationDirection,
         JoinOrderMember, NonFromClauseSubquery, Operation, QueryDestination, Scan, Search, SeekDef,
         SeekKeyComponent, SelectPlan, TableReferences, WhereTerm,
     },
 };
 use crate::{
-    schema::{Index, IndexColumn, Table},
+    schema::{Index, Table},
     translate::{
         collate::{get_collseq_from_expr, CollationSeq},
         emitter::{prepare_cdc_if_necessary, HashCtx},
@@ -80,49 +79,20 @@ impl LoopLabels {
 }
 
 pub fn init_distinct(program: &mut ProgramBuilder, plan: &SelectPlan) -> Result<DistinctCtx> {
-    let index_name = format!("distinct_{}", program.offset().as_offset_int()); // we don't really care about the name that much, just enough that we don't get name collisions
-    let mut columns = plan
+    let collations = plan
         .result_columns
         .iter()
-        .enumerate()
-        .map(|(i, col)| IndexColumn {
-            name: col
-                .expr
-                .displayer(&PlanContext(&[&plan.table_references]))
-                .to_string(),
-            order: SortOrder::Asc,
-            pos_in_table: i,
-            collation: None,
-            default: None,
-            expr: None,
+        .map(|col| {
+            get_collseq_from_expr(&col.expr, &plan.table_references)
+                .map(|c| c.unwrap_or(CollationSeq::Binary))
         })
-        .collect::<Vec<_>>();
-    for (i, column) in columns.iter_mut().enumerate() {
-        column.collation =
-            get_collseq_from_expr(&plan.result_columns[i].expr, &plan.table_references)?;
-    }
-    let index = Arc::new(Index {
-        name: index_name.clone(),
-        table_name: String::new(),
-        ephemeral: true,
-        root_page: 0,
-        columns,
-        unique: false,
-        has_rowid: false,
-        where_clause: None,
-        index_method: None,
-    });
-    let cursor_id = program.alloc_cursor_id(CursorType::BTreeIndex(index.clone()));
+        .collect::<Result<Vec<_>>>()?;
+    let hash_table_id = program.alloc_hash_table_id();
     let ctx = DistinctCtx {
-        cursor_id,
-        ephemeral_index_name: index_name,
+        hash_table_id,
+        collations,
         label_on_conflict: program.allocate_label(),
     };
-
-    program.emit_insn(Insn::OpenEphemeral {
-        cursor_id,
-        is_table: false,
-    });
 
     Ok(ctx)
 }
@@ -134,7 +104,6 @@ pub fn init_loop(
     t_ctx: &mut TranslateCtx,
     tables: &TableReferences,
     aggregates: &mut [Aggregate],
-    group_by: Option<&GroupBy>,
     mode: OperationMode,
     where_clause: &[WhereTerm],
     join_order: &[JoinOrderMember],
@@ -158,52 +127,20 @@ pub fn init_loop(
         }
     }
 
-    // Initialize ephemeral indexes for distinct aggregates
-    for (i, agg) in aggregates
-        .iter_mut()
-        .enumerate()
-        .filter(|(_, agg)| agg.is_distinct())
-    {
+    // Initialize distinct aggregates using hash tables
+    for agg in aggregates.iter_mut().filter(|agg| agg.is_distinct()) {
         assert!(
             agg.args.len() == 1,
             "DISTINCT aggregate functions must have exactly one argument"
         );
-        let index_name = format!(
-            "distinct_agg_{}_{}",
-            i,
-            agg.args[0].displayer(&PlanContext(&[tables]))
-        );
-        let index = Arc::new(Index {
-            name: index_name.clone(),
-            table_name: String::new(),
-            ephemeral: true,
-            root_page: 0,
-            columns: vec![IndexColumn {
-                name: agg.args[0].displayer(&PlanContext(&[tables])).to_string(),
-                order: SortOrder::Asc,
-                pos_in_table: 0,
-                collation: get_collseq_from_expr(&agg.original_expr, tables)?,
-                default: None, // FIXME: this should be inferred from the expression
-                expr: None,
-            }],
-            has_rowid: false,
-            unique: false,
-            where_clause: None,
-            index_method: None,
-        });
-        let cursor_id = program.alloc_cursor_id(CursorType::BTreeIndex(index.clone()));
-        if group_by.is_none() {
-            // In GROUP BY, the ephemeral index is reinitialized for every group
-            // in the clear accumulator subroutine, so we only do it here if there is no GROUP BY.
-            program.emit_insn(Insn::OpenEphemeral {
-                cursor_id,
-                is_table: false,
-            });
-        }
+        let collations = vec![
+            get_collseq_from_expr(&agg.original_expr, tables)?.unwrap_or(CollationSeq::Binary)
+        ];
+        let hash_table_id = program.alloc_hash_table_id();
         agg.distinctness = Distinctness::Distinct {
             ctx: Some(DistinctCtx {
-                cursor_id,
-                ephemeral_index_name: index_name,
+                hash_table_id,
+                collations,
                 label_on_conflict: program.allocate_label(),
             }),
         };
@@ -953,11 +890,11 @@ pub fn open_loop(
                     }
                     (Scan::Subquery, Table::FromClauseSubquery(from_clause_subquery)) => {
                         let (yield_reg, coroutine_implementation_start) =
-                            match &from_clause_subquery.plan.query_destination {
-                                QueryDestination::CoroutineYield {
+                            match from_clause_subquery.plan.select_query_destination() {
+                                Some(QueryDestination::CoroutineYield {
                                     yield_reg,
                                     coroutine_implementation_start,
-                                } => (*yield_reg, *coroutine_implementation_start),
+                                }) => (*yield_reg, *coroutine_implementation_start),
                                 _ => unreachable!("Subquery table with non-subquery query type"),
                             };
                         // In case the subquery is an inner loop, it needs to be reinitialized on each iteration of the outer loop.
@@ -1330,6 +1267,7 @@ pub fn open_loop(
             condition_fail_target,
             true,
             subqueries,
+            SubqueryRefFilter::All,
         )?;
 
         // Set the match flag to true if this is a LEFT JOIN.
@@ -1347,6 +1285,20 @@ pub fn open_loop(
             }
         }
 
+        // emit conditions that do not reference subquery results
+        emit_conditions(
+            program,
+            &t_ctx,
+            table_references,
+            join_order,
+            predicates,
+            join_index,
+            condition_fail_target,
+            false,
+            subqueries,
+            SubqueryRefFilter::WithoutSubqueryRefs,
+        )?;
+
         for subquery in subqueries.iter_mut().filter(|s| !s.has_been_evaluated()) {
             assert!(subquery.correlated, "subquery must be correlated");
             let eval_at = subquery.get_eval_at(join_order, Some(table_references))?;
@@ -1359,17 +1311,15 @@ pub fn open_loop(
 
             emit_non_from_clause_subquery(
                 program,
-                t_ctx,
+                &t_ctx.resolver,
                 *plan,
                 &subquery.query_type,
                 subquery.correlated,
             )?;
         }
 
-        // Now we can emit conditions from the WHERE clause.
-        // If the right table produces a NULL row, control jumps to the point where the match flag is set.
-        // The WHERE clause conditions may reference columns from that row, so they cannot be emitted
-        // before the flag is set — the row may be filtered out by the WHERE clause.
+        // FINALLY emit conditions that DO reference subquery results.
+        // These depend on the subquery evaluation that just happened above.
         emit_conditions(
             program,
             &t_ctx,
@@ -1380,6 +1330,7 @@ pub fn open_loop(
             condition_fail_target,
             false,
             subqueries,
+            SubqueryRefFilter::WithSubqueryRefs,
         )?;
     }
 
@@ -1396,6 +1347,31 @@ pub fn open_loop(
     Ok(())
 }
 
+// this is used to determine the order in which WHERE conditions should be emitted
+fn condition_references_subquery(expr: &Expr, subqueries: &[NonFromClauseSubquery]) -> bool {
+    let mut found = false;
+    let _ = walk_expr(expr, &mut |e: &Expr| -> Result<WalkControl> {
+        if let Expr::SubqueryResult { subquery_id, .. } = e {
+            if subqueries.iter().any(|s| s.internal_id == *subquery_id) {
+                found = true;
+                return Ok(WalkControl::SkipChildren);
+            }
+        }
+        Ok(WalkControl::Continue)
+    });
+    found
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SubqueryRefFilter {
+    /// Emit all conditions regardless of subquery references
+    All,
+    /// Only emit conditions that do NOT reference subqueries (for early evaluation)
+    WithoutSubqueryRefs,
+    /// Only emit conditions that DO reference subqueries (for late evaluation)
+    WithSubqueryRefs,
+}
+
 #[allow(clippy::too_many_arguments)]
 /// Emits WHERE/ON predicates that must be evaluated at the current join loop.
 fn emit_conditions(
@@ -1408,12 +1384,22 @@ fn emit_conditions(
     next: BranchOffset,
     from_outer_join: bool,
     subqueries: &[NonFromClauseSubquery],
+    subquery_ref_filter: SubqueryRefFilter,
 ) -> Result<()> {
     for cond in predicates
         .iter()
         .filter(|cond| cond.from_outer_join.is_some() == from_outer_join)
         .filter(|cond| {
             cond.should_eval_at_loop(join_index, join_order, subqueries, Some(table_references))
+        })
+        .filter(|cond| match subquery_ref_filter {
+            SubqueryRefFilter::All => true,
+            SubqueryRefFilter::WithoutSubqueryRefs => {
+                !condition_references_subquery(&cond.expr, subqueries)
+            }
+            SubqueryRefFilter::WithSubqueryRefs => {
+                condition_references_subquery(&cond.expr, subqueries)
+            }
         })
     {
         let jump_target_when_true = program.allocate_label();
@@ -2176,6 +2162,22 @@ fn emit_seek_termination(
                 &t_ctx.resolver,
                 NoConstantOptReason::RegisterReuse,
             )?;
+            // Apply affinity to the end key (same as we do for start key).
+            // Without this, e.g. BETWEEN '15' AND '35' on a numeric column would
+            // compare '35' as a string against numeric values, causing incorrect results.
+            if is_index {
+                let affinities: String = seek_def
+                    .iter_affinity(&seek_def.end)
+                    .map(|affinity| affinity.aff_mask())
+                    .collect();
+                if affinities.chars().any(|c| c != affinity::SQLITE_AFF_NONE) {
+                    program.emit_insn(Insn::Affinity {
+                        start_reg,
+                        count: std::num::NonZeroUsize::new(num_regs).unwrap(),
+                        affinities,
+                    });
+                }
+            }
             // If the seek termination key expression is not verifiably non-NULL, we need to check whether it is NULL,
             // and if so, jump to the loop end.
             // This is to avoid returning rows for e.g. SELECT * FROM t WHERE t.x > NULL,

@@ -52,7 +52,7 @@ pub use super::pager::{PageContent, PageInner};
 use super::wal::TursoRwLock;
 use crate::error::LimboError;
 use crate::fast_lock::SpinLock;
-use crate::io::{Buffer, Completion, ReadComplete};
+use crate::io::{Buffer, Completion, FileSyncType, ReadComplete};
 use crate::storage::btree::{payload_overflow_threshold_max, payload_overflow_threshold_min};
 use crate::storage::buffer_pool::BufferPool;
 use crate::storage::database::{DatabaseStorage, EncryptionOrChecksum};
@@ -250,6 +250,7 @@ pub struct TextEncoding(U32BE);
 
 impl TextEncoding {
     #![allow(non_upper_case_globals)]
+    pub const Unset: Self = Self(U32BE::new(0));
     pub const Utf8: Self = Self(U32BE::new(1));
     pub const Utf16Le: Self = Self(U32BE::new(2));
     pub const Utf16Be: Self = Self(U32BE::new(3));
@@ -534,22 +535,31 @@ pub fn begin_read_page(
     let complete = Box::new(move |res: Result<(Arc<Buffer>, i32), CompletionError>| {
         let Ok((buf, bytes_read)) = res else {
             page.clear_locked();
-            return;
+            return None; // IO error already captured in completion
         };
         let buf_len = buf.len();
         // Handle truncated database files: if we read fewer bytes than expected
-        // (and it's not an intentional empty read), the database is corrupt.
+        // (and it's not an intentional empty read), return a ShortRead error.
         if bytes_read == 0 {
             if !allow_empty_read {
-                turso_assert!(
-                    false,
-                    "read returned 0 bytes but empty reads are not allowed"
-                );
+                tracing::error!("short read on page {page_idx}: expected {buf_len} bytes, got 0");
+                page.clear_locked();
+                return Some(CompletionError::ShortRead {
+                    page_idx,
+                    expected: buf_len,
+                    actual: 0,
+                });
             }
         } else if bytes_read != buf_len as i32 {
-            panic!(
-                "database disk image is malformed: read {bytes_read} bytes but expected {buf_len}",
+            tracing::error!(
+                "short read on page {page_idx}: expected {buf_len} bytes, got {bytes_read}"
             );
+            page.clear_locked();
+            return Some(CompletionError::ShortRead {
+                page_idx,
+                expected: buf_len,
+                actual: bytes_read as usize,
+            });
         }
         let page = page.clone();
         let buffer = if bytes_read == 0 {
@@ -558,6 +568,7 @@ pub fn begin_read_page(
             buf
         };
         finish_read_page(page_idx, buffer, page.clone());
+        None
     });
     let c = Completion::new_read(buf, complete);
     db_file.read_page(page_idx, io_ctx, c)
@@ -714,14 +725,18 @@ pub fn write_pages_vectored(
 }
 
 #[instrument(skip_all, level = Level::DEBUG)]
-pub fn begin_sync(db_file: &dyn DatabaseStorage, syncing: Arc<AtomicBool>) -> Result<Completion> {
+pub fn begin_sync(
+    db_file: &dyn DatabaseStorage,
+    syncing: Arc<AtomicBool>,
+    sync_type: FileSyncType,
+) -> Result<Completion> {
     assert!(!syncing.load(Ordering::SeqCst));
     syncing.store(true, Ordering::SeqCst);
     let completion = Completion::new_sync(move |_| {
         syncing.store(false, Ordering::SeqCst);
     });
     #[allow(clippy::arc_with_non_send_sync)]
-    db_file.sync(completion)
+    db_file.sync(completion, sync_type)
 }
 
 #[allow(clippy::enum_variant_names)]
@@ -774,7 +789,7 @@ pub fn read_btree_cell(
     pos: usize,
     usable_size: usize,
 ) -> Result<BTreeCell> {
-    let page_type = page_content.page_type();
+    let page_type = page_content.page_type()?;
     let max_local = payload_overflow_threshold_max(page_type, usable_size);
     let min_local = payload_overflow_threshold_min(page_type, usable_size);
     match page_type {
@@ -1381,6 +1396,7 @@ impl StreamingWalReader {
         let completion: Box<ReadComplete> = Box::new(move |res| {
             let _reader = reader.clone();
             _reader.handle_header_read(res);
+            None
         });
         let c = Completion::new_read(header_buf, completion);
         self.file.pread(0, c)
@@ -1415,6 +1431,7 @@ impl StreamingWalReader {
             tracing::debug!("WAL chunk read complete");
             let reader = me.clone();
             reader.handle_chunk_read(res);
+            None
         });
         let c = Completion::new_read(buf, completion);
         let guard = self.file.pread(offset, c)?;
@@ -1503,30 +1520,41 @@ impl StreamingWalReader {
             let fh = &buf[pos..pos + WAL_FRAME_HEADER_SIZE];
             let page = &buf[pos + WAL_FRAME_HEADER_SIZE..pos + frame_size];
 
-            let page_number = u32::from_be_bytes(fh[0..4].try_into().unwrap());
+            let page_no = u32::from_be_bytes(fh[0..4].try_into().unwrap());
             let db_size = u32::from_be_bytes(fh[4..8].try_into().unwrap());
             let s1 = u32::from_be_bytes(fh[8..12].try_into().unwrap());
             let s2 = u32::from_be_bytes(fh[12..16].try_into().unwrap());
             let c1 = u32::from_be_bytes(fh[16..20].try_into().unwrap());
             let c2 = u32::from_be_bytes(fh[20..24].try_into().unwrap());
 
-            if page_number == 0 {
+            tracing::debug!("process_frames: page_no={page_no}, db_size={db_size}, s1={s1}, s2={s2}, c1={c1}, c2={c2}");
+
+            if page_no == 0 {
+                tracing::debug!(
+                    "process_frames: unexpected page_no, stop reading WAL at initialization phase"
+                );
                 break;
             }
             if s1 != header.salt_1 || s2 != header.salt_2 {
+                tracing::debug!(
+                    "process_frames: salt mismatch, stop reading WAL at initialization phase"
+                );
                 break;
             }
 
             let seed = checksum_wal(&fh[0..8], header, st.cumulative_checksum, use_native);
             let calc = checksum_wal(page, header, seed, use_native);
             if calc != (c1, c2) {
+                tracing::debug!(
+                    "process_frames: checksum mismatch, stop reading WAL at initialization phase"
+                );
                 break;
             }
 
             st.cumulative_checksum = calc;
             let frame_idx = st.frame_idx;
             st.pending_frames
-                .entry(page_number as u64)
+                .entry(page_no as u64)
                 .or_default()
                 .push(frame_idx);
 
@@ -1629,8 +1657,7 @@ pub fn begin_read_wal_frame<F: File + ?Sized>(
             let decrypt_complete =
                 Box::new(move |res: Result<(Arc<Buffer>, i32), CompletionError>| {
                     let Ok((encrypted_buf, bytes_read)) = res else {
-                        original_complete(res);
-                        return;
+                        return original_complete(res);
                     };
                     assert!(
                         bytes_read > 0,
@@ -1641,13 +1668,13 @@ pub fn begin_read_wal_frame<F: File + ?Sized>(
                             encrypted_buf
                                 .as_mut_slice()
                                 .copy_from_slice(&decrypted_data);
-                            original_complete(Ok((encrypted_buf, bytes_read)));
+                            original_complete(Ok((encrypted_buf, bytes_read)))
                         }
                         Err(e) => {
                             tracing::error!(
                                 "Failed to decrypt WAL frame data for page_idx={page_idx}: {e}"
                             );
-                            original_complete(Err(CompletionError::DecryptionError { page_idx }));
+                            original_complete(Err(CompletionError::DecryptionError { page_idx }))
                         }
                     }
                 });
@@ -1661,19 +1688,15 @@ pub fn begin_read_wal_frame<F: File + ?Sized>(
             let verify_complete =
                 Box::new(move |res: Result<(Arc<Buffer>, i32), CompletionError>| {
                     let Ok((buf, bytes_read)) = res else {
-                        original_c(res);
-                        return;
+                        return original_c(res);
                     };
                     if bytes_read <= 0 {
                         tracing::trace!("Read page {page_idx} with {} bytes", bytes_read);
-                        original_c(Ok((buf, bytes_read)));
-                        return;
+                        return original_c(Ok((buf, bytes_read)));
                     }
 
                     match checksum_ctx.verify_checksum(buf.as_mut_slice(), page_idx) {
-                        Ok(_) => {
-                            original_c(Ok((buf, bytes_read)));
-                        }
+                        Ok(_) => original_c(Ok((buf, bytes_read))),
                         Err(e) => {
                             tracing::error!(
                                 "Failed to verify checksum for page_id={page_idx}: {e}"
