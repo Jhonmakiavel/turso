@@ -1,4 +1,5 @@
 #[cfg(target_family = "windows")]
+#[allow(unused_imports)]
 use crate::error::CompletionError;
 use crate::sync::{
     atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU16, AtomicU64, Ordering},

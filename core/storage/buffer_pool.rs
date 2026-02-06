@@ -354,7 +354,7 @@ struct Arena {
 
 impl Drop for Arena {
     fn drop(&mut self) {
-        unsafe { arena::dealloc(self.base.as_ptr(), self.arena_size) };
+        arena::dealloc(self.base.as_ptr(), self.arena_size);
     }
 }
 
@@ -381,7 +381,7 @@ impl Arena {
                 BufferPool::MAX_ARENA_SIZE
             ));
         }
-        let ptr = unsafe { arena::alloc(rounded_bytes) };
+        let ptr = arena::alloc(rounded_bytes);
         let base = NonNull::new(ptr).ok_or("Failed to allocate arena")?;
         let id = io
             .register_fixed_buffer(base, rounded_bytes)

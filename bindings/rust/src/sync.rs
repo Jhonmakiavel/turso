@@ -11,10 +11,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::{header::AUTHORIZATION, Request};
 use hyper_rustls::HttpsConnectorBuilder;
-use hyper_util::{
-    client::legacy::Client,
-    rt::TokioExecutor,
-};
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::sync::mpsc;
 
 use crate::{connection::Connection, Error, Result};
@@ -500,7 +497,7 @@ impl IoWorker {
             .https_or_http()
             .enable_http1()
             .build();
-        
+
         let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(https);
 
         while rx.recv().await.is_some() {

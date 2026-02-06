@@ -16,4 +16,4 @@ static = []
 turso_macros = { workspace = true }
 
 getrandom = "0.3.1"
-chrono = { workspace = true, default-features = true }
+chrono = { workspace = true, default-features = false, features = ["clock"] }
