@@ -354,7 +354,7 @@ struct Arena {
 
 impl Drop for Arena {
     fn drop(&mut self) {
-        arena::dealloc(self.base.as_ptr(), self.arena_size);
+        unsafe { arena::dealloc(self.base.as_ptr(), self.arena_size) };
     }
 }
 
@@ -381,7 +381,7 @@ impl Arena {
                 BufferPool::MAX_ARENA_SIZE
             ));
         }
-        let ptr = arena::alloc(rounded_bytes);
+        let ptr = unsafe { arena::alloc(rounded_bytes) };
         let base = NonNull::new(ptr).ok_or("Failed to allocate arena")?;
         let id = io
             .register_fixed_buffer(base, rounded_bytes)
@@ -471,13 +471,13 @@ mod arena {
 
 #[cfg(any(not(unix), miri))]
 mod arena {
-    pub fn alloc(len: usize) -> *mut u8 {
+    pub unsafe fn alloc(len: usize) -> *mut u8 {
         let layout = std::alloc::Layout::from_size_align(len, std::mem::size_of::<u8>()).unwrap();
-        unsafe { std::alloc::alloc_zeroed(layout) }
+        std::alloc::alloc_zeroed(layout)
     }
-    pub fn dealloc(ptr: *mut u8, len: usize) {
+    pub unsafe fn dealloc(ptr: *mut u8, len: usize) {
         let layout = std::alloc::Layout::from_size_align(len, std::mem::size_of::<u8>()).unwrap();
-        unsafe { std::alloc::dealloc(ptr, layout) };
+        std::alloc::dealloc(ptr, layout);
     }
 }
 
