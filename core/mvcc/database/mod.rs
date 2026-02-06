@@ -29,9 +29,7 @@ use crate::IOExt;
 use crate::LimboError;
 use crate::Result;
 use crate::ValueRef;
-use crate::{
-    turso_assert, turso_assert_eq, turso_assert_less_than, turso_assert_reachable,
-};
+use crate::{turso_assert, turso_assert_eq, turso_assert_less_than, turso_assert_reachable};
 use crate::{Connection, Pager, SyncMode};
 use crossbeam_skiplist::map::Entry;
 use crossbeam_skiplist::{SkipMap, SkipSet};
